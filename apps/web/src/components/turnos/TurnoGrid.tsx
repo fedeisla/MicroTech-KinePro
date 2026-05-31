@@ -2,15 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { ChevronDown } from 'lucide-react'
-import type { TurnoResumen, TurnoDetalle, EstadoTurno, EstadoReserva } from '@/types/turno'
+import type { TurnoResumen, TurnoDetalle, EstadoTurno } from '@/types/turno'
 import { getTurnoById } from '@/services/turnosService'
-import { registrarPago, type MetodoPagoPresencial } from '@/services/pagosService'
 
 interface TurnoGridProps {
   fecha: string | null
   turnos: TurnoResumen[]
   loading: boolean
-  onPagoRegistrado?: () => void
 }
 
 const ESTADO_BADGE: Record<EstadoTurno, string> = {
@@ -25,28 +23,12 @@ const ESTADO_LABEL: Record<EstadoTurno, string> = {
   CANCELADO:  'Cancelado',
 }
 
-const ESTADO_RESERVA_BADGE: Record<EstadoReserva, string> = {
-  PENDIENTE:  'bg-amber-100 text-amber-700',
-  CONFIRMADA: 'bg-kine-blue/15 text-kine-blue-deep',
-  ASISTIO:    'bg-progreen/15 text-progreen-deep',
-  AUSENTE:    'bg-red-100 text-red-700',
-  CANCELADA:  'bg-neutral-bg text-neutral-gray',
-}
-
-const ESTADO_RESERVA_LABEL: Record<EstadoReserva, string> = {
-  PENDIENTE:  'Pendiente',
-  CONFIRMADA: 'Confirmada',
-  ASISTIO:    'Asistió',
-  AUSENTE:    'Ausente',
-  CANCELADA:  'Cancelada',
-}
-
 function formatFecha(isoDate: string): string {
   const [year, month, day] = isoDate.split('-')
   return `${day}/${month}/${year}`
 }
 
-export default function TurnoGrid({ fecha, turnos, loading, onPagoRegistrado }: TurnoGridProps) {
+export default function TurnoGrid({ fecha, turnos, loading }: TurnoGridProps) {
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [detalle, setDetalle] = useState<TurnoDetalle | null>(null)
   const [loadingDetalle, setLoadingDetalle] = useState(false)
@@ -109,8 +91,7 @@ export default function TurnoGrid({ fecha, turnos, loading, onPagoRegistrado }: 
           <tr>
             <th className="px-4 py-2 text-left">Horario</th>
             <th className="px-4 py-2 text-left">Actividad</th>
-            <th className="px-4 py-2 text-center">Reservas</th>
-            <th className="px-4 py-2 text-center">Libres</th>
+            <th className="px-4 py-2 text-left">Ocupación</th>
             <th className="px-4 py-2 text-center">Estado</th>
             <th className="w-10" />
           </tr>
@@ -118,6 +99,9 @@ export default function TurnoGrid({ fecha, turnos, loading, onPagoRegistrado }: 
         <tbody className="divide-y divide-neutral-bg">
           {turnos.map((turno) => {
             const expanded = expandedId === turno.id
+            const reservas = Number(turno.reservasActuales)
+            const capacidad = Number(turno.capacidad)
+            const ocupacion = capacidad > 0 ? Math.round((reservas / capacidad) * 100) : 0
             return (
               <>
                 <tr
@@ -127,8 +111,20 @@ export default function TurnoGrid({ fecha, turnos, loading, onPagoRegistrado }: 
                 >
                   <td className="px-4 py-3 font-medium text-kineblue">{turno.horario}</td>
                   <td className="px-4 py-3 text-gray-700">{turno.actividad}</td>
-                  <td className="px-4 py-3 text-center text-gray-700">{turno.reservasActuales}</td>
-                  <td className="px-4 py-3 text-center text-gray-700">{turno.espaciosLibres}</td>
+                  <td className="px-4 py-3">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+                        <span className="font-semibold text-slate-800">{turno.reservasActuales}/{turno.capacidad} inscriptos</span>
+                        <span className="flex-shrink-0 text-slate-400">{turno.espaciosLibres} libres</span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                        <div
+                          className="h-full rounded-full bg-[#005C9C] transition-all duration-200"
+                          style={{ width: `${ocupacion}%` }}
+                        />
+                      </div>
+                    </div>
+                  </td>
                   <td className="px-4 py-3 text-center">
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ESTADO_BADGE[turno.estado]}`}>
                       {ESTADO_LABEL[turno.estado]}
@@ -147,7 +143,7 @@ export default function TurnoGrid({ fecha, turnos, loading, onPagoRegistrado }: 
                       {loadingDetalle && !detalle ? (
                         <p className="text-center text-xs text-neutral-gray">Cargando detalle…</p>
                       ) : detalle ? (
-                        <DetalleInscriptos detalle={detalle} onPagoRegistrado={onPagoRegistrado} />
+                        <DetalleInscriptos detalle={detalle} />
                       ) : null}
                     </td>
                   </tr>
@@ -163,46 +159,7 @@ export default function TurnoGrid({ fecha, turnos, loading, onPagoRegistrado }: 
 
 // ─── Detalle expandido ────────────────────────────────────────────────────────
 
-interface FormPago {
-  metodo: MetodoPagoPresencial | ''
-  error: string
-  cargando: boolean
-  exito: boolean
-}
-
-const FORM_INICIAL: FormPago = { metodo: '', error: '', cargando: false, exito: false }
-
-function DetalleInscriptos({ detalle, onPagoRegistrado }: { detalle: TurnoDetalle; onPagoRegistrado?: () => void }) {
-  const [inscriptoActivo, setInscriptoActivo] = useState<number | null>(null)
-  const [form, setForm] = useState<FormPago>(FORM_INICIAL)
-  const [pagadosEnSesion, setPagadosEnSesion] = useState<Set<number>>(new Set())
-
-  function abrirFormPago(reservaId: number) {
-    setInscriptoActivo(reservaId)
-    setForm(FORM_INICIAL)
-  }
-
-  function cerrarFormPago() {
-    setInscriptoActivo(null)
-    setForm(FORM_INICIAL)
-  }
-
-  async function handleSubmitPago(reservaId: number) {
-    if (!form.metodo) {
-      setForm((f) => ({ ...f, error: 'Seleccioná un método de pago.' }))
-      return
-    }
-    setForm((f) => ({ ...f, cargando: true, error: '' }))
-    try {
-      await registrarPago({ reserva_id: reservaId, metodo: form.metodo as MetodoPagoPresencial })
-      setPagadosEnSesion((prev) => new Set(prev).add(reservaId))
-      setForm((f) => ({ ...f, cargando: false, exito: true }))
-      onPagoRegistrado?.()
-    } catch (e: any) {
-      setForm((f) => ({ ...f, cargando: false, error: e.message ?? 'Error al registrar el pago.' }))
-    }
-  }
-
+function DetalleInscriptos({ detalle }: { detalle: TurnoDetalle }) {
   if (detalle.inscriptos.length === 0) {
     return <p className="text-xs text-neutral-gray">Sin inscriptos en este turno.</p>
   }
@@ -212,79 +169,11 @@ function DetalleInscriptos({ detalle, onPagoRegistrado }: { detalle: TurnoDetall
       <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-gray mb-3">
         Inscriptos — {detalle.reservasActuales} / {detalle.capacidad}
       </p>
-      {detalle.inscriptos.map((p) => {
-        const pagado = p.pagado || pagadosEnSesion.has(p.id)
-        const formAbierto = inscriptoActivo === p.id
-        return (
-          <div key={p.id} className="rounded-lg border border-neutral-bg bg-white">
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className="text-sm font-medium text-gray-800">{p.nombre} {p.apellido}</span>
-              <div className="flex items-center gap-2">
-                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ESTADO_RESERVA_BADGE[p.estado]}`}>
-                  {ESTADO_RESERVA_LABEL[p.estado]}
-                </span>
-                {pagado ? (
-                  <span className="rounded-full bg-progreen/15 px-2 py-0.5 text-xs font-medium text-progreen-deep">
-                    Pagado
-                  </span>
-                ) : !formAbierto ? (
-                  <button
-                    onClick={() => abrirFormPago(p.id)}
-                    className="rounded-lg bg-kine-blue px-2 py-0.5 text-xs font-medium text-white hover:bg-kine-blue-deep transition-colors"
-                  >
-                    Registrar pago
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            {formAbierto && (
-              <div className="border-t border-neutral-bg px-3 pb-3 pt-2 space-y-2">
-                {form.exito ? (
-                  <p className="text-center text-xs font-medium text-progreen">
-                    Pago registrado correctamente
-                  </p>
-                ) : (
-                  <>
-                    <p className="text-xs font-medium text-neutral-gray">Método de pago</p>
-                    <div className="flex gap-2">
-                      {(['EFECTIVO', 'TARJETA'] as MetodoPagoPresencial[]).map((m) => (
-                        <button
-                          key={m}
-                          onClick={() => setForm((f) => ({ ...f, metodo: m, error: '' }))}
-                          className={`flex-1 rounded-lg border py-1.5 text-xs font-medium transition-colors ${
-                            form.metodo === m
-                              ? 'border-kine-blue bg-kine-blue/10 text-kine-blue'
-                              : 'border-neutral-bg text-neutral-gray hover:border-kine-blue/50'
-                          }`}
-                        >
-                          {m === 'EFECTIVO' ? 'Efectivo' : 'Posnet'}
-                        </button>
-                      ))}
-                    </div>
-                    {form.error && <p className="text-xs text-red-600">{form.error}</p>}
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        onClick={() => handleSubmitPago(p.id)}
-                        disabled={form.cargando}
-                        className="flex-1 rounded-lg bg-kine-blue py-1.5 text-xs font-semibold text-white hover:bg-kine-blue-deep disabled:opacity-50 transition-colors"
-                      >
-                        {form.cargando ? 'Registrando…' : 'Confirmar'}
-                      </button>
-                      <button
-                        onClick={cerrarFormPago}
-                        className="flex-1 rounded-lg border border-neutral-bg py-1.5 text-xs font-medium text-neutral-gray hover:bg-neutral-bg transition-colors"
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        )
-      })}
+      {detalle.inscriptos.map((p) => (
+        <div key={p.id} className="rounded-lg border border-neutral-bg bg-white px-3 py-2">
+          <span className="text-sm font-medium text-gray-800">{p.nombre} {p.apellido}</span>
+        </div>
+      ))}
     </div>
   )
 }

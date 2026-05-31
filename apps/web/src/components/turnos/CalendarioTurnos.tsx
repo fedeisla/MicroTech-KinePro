@@ -32,16 +32,15 @@ function obtenerFechaHoy(): string {
   return `${year}-${month}-${day}`
 }
 
-function computeDayStatus(eventos: TurnoEventoMes[]): Record<string, 'green' | 'blue'> {
-  const byDay: Record<string, { total: number; pagados: number }> = {}
+function computeDayStatus(eventos: TurnoEventoMes[]): Record<string, 'blue'> {
+  const byDay: Record<string, { total: number }> = {}
   for (const e of eventos) {
-    if (!byDay[e.date]) byDay[e.date] = { total: 0, pagados: 0 }
+    if (!byDay[e.date]) byDay[e.date] = { total: 0 }
     byDay[e.date].total += e.total_reservas
-    byDay[e.date].pagados += e.pagados
   }
-  const result: Record<string, 'green' | 'blue'> = {}
-  for (const [date, { total, pagados }] of Object.entries(byDay)) {
-    result[date] = total > 0 && pagados === total ? 'green' : 'blue'
+  const result: Record<string, 'blue'> = {}
+  for (const [date, { total }] of Object.entries(byDay)) {
+    if (total > 0) result[date] = 'blue'
   }
   return result
 }
@@ -72,7 +71,7 @@ export default function CalendarioTurnos({ fechaSeleccionada, onFechaSelect, eve
       cell.classList.remove('fc-day-has-pagos', 'fc-day-all-paid', 'fc-day-has-pending')
       const status = dayStatus[date]
       if (status) {
-        cell.classList.add('fc-day-has-pagos', status === 'green' ? 'fc-day-all-paid' : 'fc-day-has-pending')
+        cell.classList.add('fc-day-has-pagos')
       }
     })
   }, [dayStatus])
@@ -147,11 +146,6 @@ export default function CalendarioTurnos({ fechaSeleccionada, onFechaSelect, eve
             height: 7px;
             border-radius: 50%;
             flex-shrink: 0;
-          }
-          .fc-day-all-paid .fc-daygrid-day-number::after {
-            background-color: #16a34a;
-          }
-          .fc-day-has-pending .fc-daygrid-day-number::after {
             background-color: #005C9C;
           }
         `}</style>
@@ -179,7 +173,7 @@ export default function CalendarioTurnos({ fechaSeleccionada, onFechaSelect, eve
           dayCellClassNames={(arg) => {
             const status = dayStatusRef.current[toDateStr(arg.date)]
             if (!status) return []
-            return ['fc-day-has-pagos', status === 'green' ? 'fc-day-all-paid' : 'fc-day-has-pending']
+            return ['fc-day-has-pagos']
           }}
           dayCellDidMount={(arg) => {
             const dateStr = toDateStr(arg.date)
