@@ -1,4 +1,4 @@
-import { Controller, Post, Put, Body, Get, Param, ParseIntPipe, Patch } from '@nestjs/common';
+import { Controller, Post, Put, Body, Get, Param, ParseIntPipe, Patch, Delete } from '@nestjs/common';
 import { UsuariosService } from './usuarios.service';
 import { AsignarRolDto, CreatePacienteDto, LoginDto, LogoutDto } from './usuarios.dto';
 import { UpdateContrasenaDto, UpdateUsuarioDto } from './usuarios.dto';
@@ -64,5 +64,11 @@ export class UsuariosController {
     @Body() dto: AsignarRolDto,
   ) {
     return this.usuariosService.asignarRol(id, dto);
+  }
+
+  @Roles('OWNER', 'ADMIN')
+  @Delete(':id')
+  eliminar(@Param('id', ParseIntPipe) id: number) {
+    return this.usuariosService.eliminarUsuario(id);
   }
 }

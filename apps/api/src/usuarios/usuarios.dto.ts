@@ -71,6 +71,12 @@ export class UpdateUsuarioDto {
   @IsString()
   @Matches(DNI_NUMERICO, { message: 'El DNI debe contener solo números (7 u 8 dígitos)' })
   dni?: string;
+
+  @IsOptional()
+  @IsEnum(RolUsuario, {
+    message: 'El rol debe ser uno de: OWNER, ADMIN, PACIENTE',
+  })
+  rol?: RolUsuario;
 }
 
 export class LoginDto {

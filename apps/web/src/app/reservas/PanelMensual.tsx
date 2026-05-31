@@ -77,7 +77,7 @@ export default function PanelMensual({
               transition={{ duration: 0.3, ease: "easeInOut" }}
               className="flex-1 flex flex-col absolute inset-0"
             >
-              <h3 className="text-lg font-bold text-slate-800 mb-4">Paso 1: Día y Horario Fijo</h3>
+              <h3 className="text-lg font-bold text-slate-800 mb-4">Paso 1: Día y horario fijo</h3>
               
               <div className="mb-6">
                 {diasSeleccionados.length === 0 ? (

@@ -272,7 +272,7 @@ export class ReservaService {
         where: { paciente_id: pacienteId, estado: EstadoReserva.AUSENTE },
       });
       const pierdeDescuento = cantReprogramaciones >= 2 || ausencias >= 2;
-      return { message: 'Turno reprogramado', cantReprogramaciones, pierdeDescuento };
+      return { message: 'Turno reprogramado con éxito. Usted acumula ahora una reprogramación desde el turno original. En caso de volver a reprogramar, alcanzará el limite de reprogramaciones y perderá la posibilidad de recibir un descuento el próximo mes', cantReprogramaciones, pierdeDescuento };
     }
 
     // Caso 3: cambio de turno + estado: no soportado (evita ambigüedad)

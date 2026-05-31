@@ -97,7 +97,7 @@ export default function ReprogramarReservaModal({
       const res = await reprogramarReserva(reservaId, Number(turnoId))
       toast.success(res.message, {
         description: res.pierdeDescuento
-          ? 'Alcanzaste el límite para conservar el descuento (se gestiona en otra historia).'
+          ? 'Turno reprogramado con éxito. Usted alcanzó el límite de reprogramaciones desde el turno original y perdió la posibilidad de recibir un descuento el próximo mes.'
           : undefined,
       })
       onReprogramado()

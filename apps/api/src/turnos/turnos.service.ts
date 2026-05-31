@@ -80,8 +80,9 @@ export class TurnosService {
 
 
     // Escenario 4: validar rango semanal (lunes a viernes).
-    // getDay(): 0 = domingo, 1 = lunes, ..., 6 = sábado.
-    const diaSemana = fechaDate.getDay();
+    // getUTCDay() usa el día de la semana en UTC, que coincide con la fecha YYYY-MM-DD que almacenamos.
+    // 0 = domingo, 1 = lunes, ..., 6 = sábado.
+    const diaSemana = fechaDate.getUTCDay();
     if (diaSemana === 0 || diaSemana === 6) {
       throw new BadRequestException('El día se encuentra fuera del rango semanal');
     }

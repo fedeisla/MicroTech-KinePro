@@ -56,7 +56,7 @@ export class AuthService {
         );
       }
 
-      throw new BadRequestException('Datos incorrectos, intente nuevamente.');
+      throw new BadRequestException('Datos incorrectos.');
     }
 
     // Escenario 1: Exitoso -> Reseteamos intentos fallidos

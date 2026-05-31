@@ -1,71 +1,88 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { toast } from 'sonner'; // 👈 Importamos sonner
+import { toast } from 'sonner';
 import { Pencil, Trash2, Loader2, AlertCircle } from 'lucide-react'; 
-import TablaGenerica, { Columna } from './TablaGenerica'; 
-
-interface Usuario {
-  id: number | string; 
-  nombre: string;
-  apellido: string;
-  dni: string;
-  telefono: string;
-  email: string;
-  rol: string;
-  fecha_registro: string;
-}
+import TablaGenerica, { Columna } from './TablaGenerica';
+import UsuarioModal from '@/components/usuarios/UsuarioModal';
+import ConfirmDialog from './ConfirmDialog';
+import { useAuth } from '@/hooks/useAuth';
+import { obtenerUsuarioPorId, eliminarUsuario } from '@/services/usuariosService';
+import type { Usuario } from '@/types/usuario';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
 
 export default function TablaUsuarios() {
+  const { rol: rolActual } = useAuth();
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(true);
+  const [modalAbierto, setModalAbierto] = useState(false);
+  const [usuarioEnEdicion, setUsuarioEnEdicion] = useState<Usuario | null>(null);
+  const [usuarioAEliminar, setUsuarioAEliminar] = useState<Usuario | null>(null);
+  const [eliminando, setEliminando] = useState(false);
+
+  async function cargarUsuarios() {
+    setCargando(true);
+    setError(null);
+    try {
+      const token = localStorage.getItem('kinepro_token');
+      const respuesta = await fetch(`${API}/usuarios`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+    
+      const json = await respuesta.json().catch(() => null);
+    
+      if (!respuesta.ok) {
+        const msg = json?.message ?? 'Error al cargar los usuarios';
+        throw new Error(Array.isArray(msg) ? msg.join(', ') : msg);
+      }
+    
+      setUsuarios(json.data || []);
+    } catch (e: any) {
+      setError(e.message);
+      setUsuarios([]);
+      toast.error('Error de servidor', { description: e.message });
+    } finally {
+      setCargando(false);
+    }
+  }
 
   useEffect(() => {
-    const cargarUsuarios = async () => {
-      try {
-        const token = localStorage.getItem('kinepro_token');
-        const respuesta = await fetch(`${API}/usuarios`, {
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
-      
-        const json = await respuesta.json().catch(() => null);
-      
-        if (!respuesta.ok) {
-          const msg = json?.message ?? 'Error al cargar los usuarios';
-          throw new Error(Array.isArray(msg) ? msg.join(', ') : msg);
-        }
-      
-        setUsuarios(json.data || []);
-      } catch (e: any) {
-        setError(e.message);
-        setUsuarios([]);
-        toast.error('Error de servidor', { description: e.message });
-      } finally {
-        setCargando(false);
-      }
-    };
     cargarUsuarios();
   }, []);
 
-  const handleModificar = (id: number | string) => {
-    toast.info(`Modificar usuario`, {
-      description: `Abriendo edición para el ID: ${id}`,
-    });
-  };
-
-  const handleBaja = (id: number | string) => {
-    if (confirm('¿Estás seguro de que deseas dar de baja a este usuario?')) {
-      toast.success('Solicitud procesada', {
-        description: `El usuario con ID ${id} fue dado de baja correctamente.`,
-      });
+  async function abrirModificar(usuario: Usuario) {
+    try {
+      const res = await obtenerUsuarioPorId(usuario.id);
+      setUsuarioEnEdicion(res.data);
+      setModalAbierto(true);
+    } catch (e: any) {
+      toast.error('Error al cargar usuario', { description: e.message });
     }
-  };
+  }
+
+  function pedirEliminar(usuario: Usuario) {
+    setUsuarioAEliminar(usuario);
+  }
+
+  async function confirmarEliminar() {
+    if (!usuarioAEliminar) return;
+    setEliminando(true);
+    try {
+      const res = await eliminarUsuario(usuarioAEliminar.id);
+      toast.success(res.message);
+      setUsuarioAEliminar(null);
+      cargarUsuarios();
+    } catch (e: any) {
+      toast.error('No se pudo eliminar', { description: e.message });
+    } finally {
+      setEliminando(false);
+    }
+  }
 
   // Configuración de las columnas con los nuevos iconos vectoriales
   const columnasConfig: Columna<Usuario>[] = [
@@ -85,12 +102,16 @@ export default function TablaUsuarios() {
       encabezado: 'Teléfono', 
       render: (u) => <span className="text-slate-500">{u.telefono || '-'}</span> 
     },
+    {
+      encabezado: 'Rol',
+      render: (u) => <span className="text-slate-500 text-xs font-semibold">{u.rol}</span>
+    },
     { 
       encabezado: 'Acciones', 
       render: (u) => (
         <div className="flex items-center justify-center gap-2">
           <button
-            onClick={() => handleModificar(u.id)}
+            onClick={() => abrirModificar(u)}
             className="bg-slate-100 hover:bg-teal-50 text-slate-600 hover:text-teal-600 p-2 rounded-xl text-xs font-semibold transition-colors border border-slate-200 hover:border-teal-200 flex items-center gap-1.5"
             title="Modificar usuario"
           >
@@ -98,12 +119,12 @@ export default function TablaUsuarios() {
             <span>Modificar</span>
           </button>
           <button
-            onClick={() => handleBaja(u.id)}
+            onClick={() => pedirEliminar(u)}
             className="bg-red-50 hover:bg-red-100 text-red-600 p-2 rounded-xl text-xs font-semibold transition-colors border border-red-100 flex items-center gap-1.5"
-            title="Dar de baja"
+            title="Eliminar usuario"
           >
             <Trash2 className="w-3.5 h-3.5" />
-            <span>Dar de Baja</span>
+            <span>Eliminar</span>
           </button>
         </div>
       )
@@ -152,7 +173,32 @@ export default function TablaUsuarios() {
         columnas={columnasConfig} 
         mensajeVacio="No hay usuarios registrados en el sistema." 
       />
-      
+
+      {/* Modal de Modificación */}
+      <UsuarioModal
+        abierto={modalAbierto}
+        usuario={usuarioEnEdicion}
+        esOwner={rolActual === 'OWNER'}
+        onClose={() => setModalAbierto(false)}
+        onGuardado={cargarUsuarios}
+      />
+
+      {/* Diálogo de Confirmación de Eliminación */}
+      <ConfirmDialog
+        abierto={usuarioAEliminar !== null}
+        titulo="Eliminar usuario"
+        mensaje={
+          usuarioAEliminar
+            ? `¿Estás seguro de que querés eliminar a ${usuarioAEliminar.nombre} ${usuarioAEliminar.apellido}? Esta acción no se puede deshacer.`
+            : ''
+        }
+        textoConfirmar="Eliminar"
+        textoCancelar="Cancelar"
+        variante="peligro"
+        procesando={eliminando}
+        onConfirmar={confirmarEliminar}
+        onCancelar={() => setUsuarioAEliminar(null)}
+      />
     </div>
   );
 }

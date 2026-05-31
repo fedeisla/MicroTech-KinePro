@@ -290,4 +290,71 @@ export class UsuariosService {
     return { message: `Rol "${dto.rol}" asignado correctamente a ${usuario.email}` };
   }
 
+  async eliminarUsuario(id: number) {
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id },
+      include: {
+        paciente: {
+          include: {
+            reservas: {
+              where: {
+                estado: {
+                  in: ['PENDIENTE', 'CONFIRMADA'],
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!usuario) {
+      throw new NotFoundException('El usuario no existe');
+    }
+
+    // Verificar si es paciente y tiene turnos activos
+    if (usuario.paciente && usuario.paciente.reservas.length > 0) {
+      throw new BadRequestException(
+        'No se puede eliminar el usuario porque tiene turnos activos',
+      );
+    }
+
+    // Eliminar datos relacionados según el rol
+    if (usuario.paciente) {
+      // Eliminar registros relacionados al paciente
+      await this.prisma.descuento.deleteMany({
+        where: { paciente_id: usuario.paciente.id },
+      });
+      await this.prisma.notificacion.deleteMany({
+        where: { paciente_id: usuario.paciente.id },
+      });
+      await this.prisma.listaEspera.deleteMany({
+        where: { paciente_id: usuario.paciente.id },
+      });
+      // Eliminar el registro de paciente
+      await this.prisma.paciente.delete({
+        where: { id: usuario.paciente.id },
+      });
+    }
+
+    if (usuario.rol === 'KINESIOLOGO') {
+      // Eliminar el registro de kinesiólogo si existe
+      const kinesiologo = await this.prisma.kinesiologo.findUnique({
+        where: { usuario_id: id },
+      });
+      if (kinesiologo) {
+        await this.prisma.kinesiologo.delete({
+          where: { id: kinesiologo.id },
+        });
+      }
+    }
+
+    // Eliminar el usuario
+    await this.prisma.usuario.delete({
+      where: { id },
+    });
+
+    return { message: 'El usuario se eliminó con éxito' };
+  }
+
 }
