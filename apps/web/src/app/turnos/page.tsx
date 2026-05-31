@@ -88,10 +88,10 @@ export default function TurnosPage() {
               fecha={fechaSeleccionada}
               turnos={turnos}
               loading={loadingTurnos}
-              onPagoRegistrado={() => {
-                if (!fechaSeleccionada) return
-                const [anio, mes] = fechaSeleccionada.split('-').map(Number)
-                void cargarEventosMes(mes, anio)
+              onTurnosActualizados={() => {
+                if (fechaSeleccionada) void handleFechaSelect(fechaSeleccionada)
+                const hoy = new Date()
+                void cargarEventosMes(hoy.getMonth() + 1, hoy.getFullYear())
               }}
             />
           </section>

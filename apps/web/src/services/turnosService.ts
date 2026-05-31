@@ -86,6 +86,7 @@ export async function getTurnoById(id: number): Promise<TurnoDetalle> {
       id: i.id,
       nombre: i.nombre,
       apellido: i.apellido,
+      email: i.email ?? '',
       estado: i.estado,
       pagado: i.pagado ?? false,
     })),

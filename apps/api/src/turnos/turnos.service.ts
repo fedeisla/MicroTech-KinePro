@@ -165,7 +165,7 @@ export class TurnosService {
           include: {
             paciente: {
               include: {
-                usuario: { select: { nombre: true, apellido: true } },
+                usuario: { select: { nombre: true, apellido: true, email: true } },
               },
             },
             pagos: { where: { estado: 'COMPLETADO' }, select: { id: true } },
@@ -191,6 +191,7 @@ export class TurnosService {
         id: r.id,
         nombre: r.paciente.usuario.nombre,
         apellido: r.paciente.usuario.apellido,
+        email: r.paciente.usuario.email,
         estado: r.estado,
         pagado: r.pagos.length > 0,
       })),

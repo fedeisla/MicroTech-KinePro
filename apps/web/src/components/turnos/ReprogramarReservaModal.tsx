@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { apiFetch } from '@/lib/api'
-import { reprogramarReserva } from '@/services/reservasService'
+import { reprogramarReserva, reprogramarReservaPresencial } from '@/services/reservasService'
 
 type TurnoDisponibleApi = {
   id: number
@@ -31,6 +31,7 @@ interface Props {
   abierto: boolean
   reservaId: number | null
   fechaActual: string | null
+  presencial?: boolean
   onClose: () => void
   onReprogramado: () => void
 }
@@ -39,6 +40,7 @@ export default function ReprogramarReservaModal({
   abierto,
   reservaId,
   fechaActual,
+  presencial = false,
   onClose,
   onReprogramado,
 }: Props) {
@@ -94,12 +96,10 @@ export default function ReprogramarReservaModal({
     }
     setGuardando(true)
     try {
-      const res = await reprogramarReserva(reservaId, Number(turnoId))
-      toast.success(res.message, {
-        description: res.pierdeDescuento
-          ? 'Turno reprogramado con éxito. Usted alcanzó el límite de reprogramaciones desde el turno original y perdió la posibilidad de recibir un descuento el próximo mes.'
-          : undefined,
-      })
+      const res = presencial
+        ? await reprogramarReservaPresencial(reservaId, Number(turnoId))
+        : await reprogramarReserva(reservaId, Number(turnoId))
+      toast.success(res.message)
       onReprogramado()
       onClose()
     } catch (e: any) {

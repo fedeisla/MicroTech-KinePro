@@ -1,6 +1,8 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Req, UseGuards, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Body, Patch, Param, Delete, Req, Query } from '@nestjs/common';
 
 import { CreateReservaDto } from './dto/create-reserva.dto';
+import { CreateReservaPresencialDto } from './dto/create-reserva-presencial.dto';
+import { CreateReservaFijaPresencialDto } from './dto/create-reserva-fija-presencial.dto';
 import { UpdateReservaDto } from './dto/update-reserva.dto';
 import { ReservaService } from './reserva.service';
 import { EstadoReserva } from '@prisma/client';
@@ -22,6 +24,34 @@ export class ReservaController {
     const pacienteId = req.user.pacienteId;
      console.log(pacienteId);
     return this.reservaService.crearReservaFija(pacienteId,body.turnoInicialId, body.fechas);
+  }
+
+  @Roles('ADMIN', 'OWNER')
+  @Post('crear-presencial')
+  crearPresencial(@Body() body: CreateReservaPresencialDto) {
+    // El admin/owner provee el email del paciente y el id del turno
+    return this.reservaService.createForEmail({ turno_id: body.turno_id }, body.email);
+  }
+
+  @Roles('ADMIN', 'OWNER')
+  @Post('fija-presencial')
+  crearFijaPresencial(@Body() body: CreateReservaFijaPresencialDto) {
+    return this.reservaService.crearReservaFijaForEmail(body.email, body.turnoInicialId, body.fechas);
+  }
+
+  @Roles('ADMIN', 'OWNER')
+  @Patch('presencial/:id')
+  reprogramarPresencial(@Param('id') id: string, @Body() body: UpdateReservaDto) {
+    if (typeof body.turno_id !== 'number') {
+      throw new BadRequestException('Debe indicar el turno de destino');
+    }
+    return this.reservaService.reprogramarPresencial(+id, body.turno_id);
+  }
+
+  @Roles('ADMIN', 'OWNER')
+  @Delete('presencial/:id')
+  cancelarPresencial(@Param('id') id: string) {
+    return this.reservaService.cancelarPresencial(+id);
   }
 
   @Roles('PACIENTE')

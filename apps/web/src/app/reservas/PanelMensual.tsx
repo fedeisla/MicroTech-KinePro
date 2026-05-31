@@ -1,4 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { fechasMismoDiaSemana, formatearFechaLocal, parseFechaLocal } from '@/lib/fechas';
+import { toast } from 'sonner';
+import { crearPaciente } from '@/services/usuariosService';
 import { Clock, Loader2, CalendarDays, ClipboardList, CheckCircle2, ArrowRight, ArrowLeft, TicketPercent } from 'lucide-react';
 import { RangoHorarioBackend, Actividad } from '@/types/turno';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -14,31 +17,42 @@ interface Props {
   actividadSeleccionada: Actividad | null;
   setActividadSeleccionada: (act: Actividad | null) => void;
   handleConfirmarReservaFija: (fechas: Date[]) => void; 
+  adminMode?: boolean;
+  adminEmail?: string;
+  setAdminEmail?: (email: string) => void;
 }
 
 export default function PanelMensual({
   mesActual, anioActual, diasSeleccionados, horariosDelDia, cargandoHorarios,
   rangoSeleccionado, setRangoSeleccionado, actividadSeleccionada, setActividadSeleccionada,
   handleConfirmarReservaFija
+  , adminMode = false, adminEmail = '', setAdminEmail
 }: Props) {
   
   const [[paso, direccion], setPasoConfig] = useState<[1 | 2, number]>([1, 0]);
+  const [fechaHasta, setFechaHasta] = useState('');
 
   const calcularFechasFijas = () => {
-    if (diasSeleccionados.length === 0) return [];
-    
-    const primerDia = diasSeleccionados[0];
-    const fechasGeneradas: Date[] = [];
+    if (diasSeleccionados.length === 0 || !fechaHasta) return [];
 
-    for (let i = 0; i < 4; i++) {
-      const fecha = new Date(anioActual, mesActual, primerDia + (i * 7));
-      fechasGeneradas.push(fecha);
-    }
-    
-    return fechasGeneradas;
+    const primerDia = diasSeleccionados[0];
+    const inicio = new Date(anioActual, mesActual, primerDia);
+    const fin = parseFechaLocal(fechaHasta);
+    return fechasMismoDiaSemana(inicio, fin);
   };
 
   const fechasCalculadas = calcularFechasFijas();
+
+  useEffect(() => {
+    if (diasSeleccionados.length === 0) {
+      setFechaHasta('');
+      return;
+    }
+    const primerDia = diasSeleccionados[0];
+    const ultimoDiaMes = new Date(anioActual, mesActual + 1, 0).getDate();
+    const finSugerido = new Date(anioActual, mesActual, Math.min(primerDia + 21, ultimoDiaMes));
+    setFechaHasta(formatearFechaLocal(finSugerido));
+  }, [diasSeleccionados, mesActual, anioActual]);
   const handleSiguiente = () => setPasoConfig([2, 1]);
   const handleVolver = () => setPasoConfig([1, -1]);
 
@@ -169,8 +183,20 @@ export default function PanelMensual({
                 </p>
               </div>
 
+              <div className="mb-4">
+                <label className="text-sm font-bold text-slate-700 mb-1 block">Hasta (última sesión)</label>
+                <input
+                  type="date"
+                  value={fechaHasta}
+                  onChange={(e) => setFechaHasta(e.target.value)}
+                  className="w-full p-2 border border-slate-200 rounded-lg text-sm mb-3"
+                />
+              </div>
+
               <div className="mb-4 overflow-y-auto max-h-[120px] custom-scrollbar pr-2">
-                <p className="text-sm font-bold text-slate-700 mb-2">Fechas consecutivas ({fechasCalculadas.length} turnos):</p>
+                <p className="text-sm font-bold text-slate-700 mb-2">
+                  Sesiones del mismo día ({fechasCalculadas.length} turnos):
+                </p>
                 <div className="flex flex-wrap gap-2">
                   {fechasCalculadas.map((fecha, idx) => (
                     <span key={idx} className="bg-slate-100 border border-slate-200 text-slate-700 text-xs px-3 py-1.5 rounded-lg font-semibold shadow-sm">
@@ -188,9 +214,20 @@ export default function PanelMensual({
                 </div>
               </div>
 
+              {adminMode && (
+                <div className="mb-3">
+                  <label className="text-xs text-slate-600 mb-1 block">Email del paciente</label>
+                  <input value={adminEmail} onChange={(e) => setAdminEmail?.(e.target.value)} placeholder="email@ejemplo.com" className="w-full p-2 border rounded-md text-sm mb-3" />
+                </div>
+              )}
+              {adminMode && (
+                <RegisterInline adminEmail={adminEmail} setAdminEmail={setAdminEmail} />
+              )}
+
               <button
                 onClick={() => handleConfirmarReservaFija(fechasCalculadas)}
-                className="w-full py-3 px-4 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 bg-teal-600 text-white hover:bg-teal-700 active:scale-[0.98]"
+                disabled={fechasCalculadas.length === 0 || (adminMode && !adminEmail)}
+                className="w-full py-3 px-4 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 bg-teal-600 text-white hover:bg-teal-700 active:scale-[0.98] disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
               >
                 <CheckCircle2 className="w-5 h-5" />
                 <span>Confirmar {fechasCalculadas.length} turnos</span>
@@ -201,4 +238,49 @@ export default function PanelMensual({
       </div>
     </div>
   );
+}
+
+function RegisterInline({ adminEmail, setAdminEmail }: { adminEmail?: string; setAdminEmail?: (s: string) => void }) {
+  const [show, setShow] = useState(false);
+  const [nombre, setNombre] = useState('');
+  const [apellido, setApellido] = useState('');
+  const [dni, setDni] = useState('');
+  const [telefono, setTelefono] = useState('');
+  const [fechaNacimiento, setFechaNacimiento] = useState('');
+  const [password, setPassword] = useState('12345678');
+
+  const handleRegistrar = async () => {
+    try {
+      if (!adminEmail) return toast.error('Ingrese un email antes de registrar');
+      await crearPaciente({ nombre, apellido, dni, telefono, email: adminEmail, password, fechaNacimiento });
+      toast.success('Paciente registrado con éxito');
+      setShow(false);
+      setNombre(''); setApellido(''); setDni(''); setTelefono(''); setFechaNacimiento('');
+    } catch (err: any) {
+      toast.error('No se pudo registrar al paciente', { description: err.message || String(err) });
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex gap-2">
+        <button onClick={() => setShow(s => !s)} className="px-3 py-1 rounded-md text-sm bg-slate-100 hover:bg-slate-200">{show ? 'Cancelar registro' : 'Registrar paciente'}</button>
+      </div>
+      {show && (
+        <div className="mt-3 bg-white border p-3 rounded-md">
+          <div className="grid grid-cols-2 gap-2">
+            <input placeholder="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} className="p-2 border rounded-md text-sm" />
+            <input placeholder="Apellido" value={apellido} onChange={(e) => setApellido(e.target.value)} className="p-2 border rounded-md text-sm" />
+            <input placeholder="DNI" value={dni} onChange={(e) => setDni(e.target.value)} className="p-2 border rounded-md text-sm" />
+            <input placeholder="Teléfono" value={telefono} onChange={(e) => setTelefono(e.target.value)} className="p-2 border rounded-md text-sm" />
+            <input placeholder="Fecha nacimiento (YYYY-MM-DD)" value={fechaNacimiento} onChange={(e) => setFechaNacimiento(e.target.value)} className="p-2 border rounded-md text-sm col-span-2" />
+            <input placeholder="Contraseña" value={password} onChange={(e) => setPassword(e.target.value)} className="p-2 border rounded-md text-sm col-span-2" />
+          </div>
+          <div className="mt-3 flex justify-end">
+            <button onClick={handleRegistrar} className="px-4 py-2 rounded-md bg-teal-600 text-white">Registrar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }

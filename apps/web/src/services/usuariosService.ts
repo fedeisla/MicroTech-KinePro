@@ -69,3 +69,19 @@ export async function eliminarUsuario(id: number): Promise<{ message: string }> 
     method: 'DELETE',
   })
 }
+
+export async function crearPaciente(payload: {
+  nombre: string;
+  apellido: string;
+  dni: string;
+  telefono: string;
+  email: string;
+  password: string;
+  fechaNacimiento: string; // YYYY-MM-DD
+}): Promise<{ message: string }> {
+  return apiFetch('/usuarios/registro', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    omitToken: true, // registro público
+  })
+}

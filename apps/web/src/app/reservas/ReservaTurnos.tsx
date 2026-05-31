@@ -5,7 +5,8 @@ import { toast } from 'sonner';
 import { getDiasDisponiblesDelMes, getHorariosTurnos } from '@/services/turnosService';
 import { Actividad, RangoHorarioBackend } from '@/types/turno';
 import { CrearReservaInput } from '@/types/reserva';
-import { crearReserva, crearReservaFija } from '@/services/reservasService';
+import { crearReserva, crearReservaFija, crearReservaPresencial, crearReservaFijaPresencial } from '@/services/reservasService';
+import { useAuth } from '@/hooks/useAuth';
 
 // Importamos los hijos
 import SelectorModalidad from './SelectorModalidad';
@@ -39,6 +40,12 @@ export default function ReservaTurnos() {
   // Estados de UI (Cargas)
   const [cargandoDias, setCargandoDias] = useState<boolean>(false);
   const [cargandoHorarios, setCargandoHorarios] = useState<boolean>(false);
+  // Auth
+  const { rol } = useAuth();
+  const esAdmin = rol === 'ADMIN' || rol === 'OWNER';
+
+  // Email cuando el admin reserva presencialmente
+  const [adminEmail, setAdminEmail] = useState<string>('');
 
   // Buscamos todos los turnos con capacidad para ponerlos en el calendario
   useEffect(() => {
@@ -122,13 +129,18 @@ export default function ReservaTurnos() {
   };
 
   const handleConfirmarTurno = async () => {
-    if (!diaPrincipal || !rangoSeleccionado || !actividadSeleccionada) return; 
+    if (!diaPrincipal || !actividadSeleccionada) return; 
     try {
       const inputReserva: CrearReservaInput = {
-        turno_id: rangoSeleccionado.idTurno,
+        turno_id: actividadSeleccionada.id,
       };
 
-      await crearReserva(inputReserva);
+      if (esAdmin) {
+        if (!adminEmail) throw new Error('Ingrese el email del paciente');
+        await crearReservaPresencial(adminEmail, inputReserva.turno_id);
+      } else {
+        await crearReserva(inputReserva);
+      }
       const mesFormateado = String(mesActual + 1).padStart(2, '0');
       const diaFormateado = String(diaPrincipal).padStart(2, '0'); 
 
@@ -145,13 +157,19 @@ export default function ReservaTurnos() {
   };
 
   const handleConfirmarReservaFija = async (fechasMensuales: Date[]) => {
-    if (!rangoSeleccionado) return;
-    
+    if (!actividadSeleccionada || fechasMensuales.length === 0) return;
+
     try {
-      await crearReservaFija(rangoSeleccionado.idTurno, fechasMensuales);
-      toast.success('Reserva exitosa', {
-      duration: 5000,
-    });
+      let respuesta;
+      if (esAdmin) {
+        if (!adminEmail) throw new Error('Ingrese el email del paciente');
+        respuesta = await crearReservaFijaPresencial(adminEmail, actividadSeleccionada.id, fechasMensuales);
+      } else {
+        respuesta = await crearReservaFija(actividadSeleccionada.id, fechasMensuales);
+      }
+      toast.success(respuesta.message, { duration: 5000 });
+      resetSeleccion();
+      setModalidad('UNICO');
     } catch (error: any) {
       toast.error('No pudimos registrar tu reserva fija', {
         description: error.message || 'Ocurrió un problema. Intentá de nuevo.',
@@ -200,7 +218,10 @@ export default function ReservaTurnos() {
                setRangoSeleccionado={setRangoSeleccionado}
                actividadSeleccionada={actividadSeleccionada}
                setActividadSeleccionada={setActividadSeleccionada}
-               handleConfirmarTurno={handleConfirmarTurno}
+              handleConfirmarTurno={handleConfirmarTurno}
+              adminMode={esAdmin}
+              adminEmail={adminEmail}
+              setAdminEmail={setAdminEmail}
              />
           ) : (
              <PanelMensual 
@@ -213,7 +234,10 @@ export default function ReservaTurnos() {
                 setRangoSeleccionado={setRangoSeleccionado}
                 actividadSeleccionada={actividadSeleccionada}
                 setActividadSeleccionada={setActividadSeleccionada}
-                handleConfirmarReservaFija={handleConfirmarReservaFija}
+               handleConfirmarReservaFija={handleConfirmarReservaFija}
+               adminMode={esAdmin}
+               adminEmail={adminEmail}
+               setAdminEmail={setAdminEmail}
             />
           )}
         </div>

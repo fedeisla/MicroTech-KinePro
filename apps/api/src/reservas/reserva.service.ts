@@ -1,8 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
 import { CreateReservaDto } from './dto/create-reserva.dto';
 import { UpdateReservaDto } from './dto/update-reserva.dto';
 import { PrismaService } from '@/prisma/prisma.service';
-import { EstadoReserva } from '@prisma/client';
+import { EstadoReserva, Prisma } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 
 @Injectable()
 export class ReservaService {
@@ -16,6 +17,32 @@ export class ReservaService {
     const hh = horaInicio.getUTCHours();
     const mm = horaInicio.getUTCMinutes();
     return new Date(Date.UTC(y, m, d, hh, mm, 0, 0));
+  }
+
+  private parseFechaYYYYMMDD(fecha: string): Date {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fecha);
+    if (!m) {
+      throw new BadRequestException('La fecha debe estar en formato YYYY-MM-DD');
+    }
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const day = Number(m[3]);
+    return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+  }
+
+  private mismaFechaYHoraTurno(
+    fechaA: Date,
+    horaA: Date,
+    fechaB: Date,
+    horaB: Date,
+  ): boolean {
+    return (
+      fechaA.getUTCFullYear() === fechaB.getUTCFullYear() &&
+      fechaA.getUTCMonth() === fechaB.getUTCMonth() &&
+      fechaA.getUTCDate() === fechaB.getUTCDate() &&
+      horaA.getUTCHours() === horaB.getUTCHours() &&
+      horaA.getUTCMinutes() === horaB.getUTCMinutes()
+    );
   }
 
   private horasHastaTurno(reserva: { turno: { fecha: Date; hora_inicio: Date } }) {
@@ -72,6 +99,7 @@ export class ReservaService {
         estado: EstadoReserva.CONFIRMADA, 
         turno: {
           fecha: turno.fecha,
+          hora_inicio: turno.hora_inicio,
         },
       },
     });
@@ -108,7 +136,7 @@ export class ReservaService {
       });
 
       return {
-        message: 'Reserva exitosa',
+        message: '¡Turno reservado con éxito!',
       };
 
     } catch (error) {
@@ -191,92 +219,169 @@ export class ReservaService {
 
     // Caso 2: reprogramación (cambio de turno)
     if (quiereCambiarTurno) {
-      // Regla HU: se debe reprogramar con 48h o más de anticipación al turno original.
-      const horas = this.horasHastaTurno(reservaActual);
-      if (horas < 48) {
-        throw new BadRequestException('El límite de tiempo para reprogramar el turno no se alcanzó (mínimo 48 horas)');
-      }
-
-      // Regla HU: máximo 2 reprogramaciones.
-      if (reservaActual.cant_reprogramaciones >= 2) {
-        throw new BadRequestException('El paciente alcanzó el límite de reprogramaciones');
-      }
-
-      const nuevoTurno = await this.prisma.turno.findUnique({ where: { id: updateReservaDto.turno_id } });
-      if (!nuevoTurno) throw new BadRequestException('El turno especificado no existe');
-
-      const nuevoTurnoFechaHora = this.buildTurnoDateTimeUTC(nuevoTurno.fecha, nuevoTurno.hora_inicio);
-      if (nuevoTurnoFechaHora.getTime() <= Date.now()) {
-        throw new BadRequestException('No se puede reprogramar a un turno en el pasado o que ya comenzó');
-      }
-
-      if (nuevoTurno.estado === 'CANCELADO') {
-        throw new BadRequestException('El turno seleccionado no se encuentra disponible');
-      }
-      if (nuevoTurno.cantidad_inscriptos >= nuevoTurno.capacidad) {
-        throw new BadRequestException('El turno seleccionado no posee cupos disponibles');
-      }
-
-      // Evitar doble reserva en el mismo día (excluyendo la propia reserva)
-      const yaTieneOtraEseDia = await this.prisma.reserva.findFirst({
-        where: {
-          paciente_id: pacienteId,
-          id: { not: id },
-          estado: EstadoReserva.CONFIRMADA,
-          turno: { fecha: nuevoTurno.fecha },
-        },
-      });
-      if (yaTieneOtraEseDia) {
-        throw new BadRequestException('El paciente ya posee un turno confirmado para ese día');
-      }
-
-      try {
-        const nuevoEstado =
-          reservaActual.estado === EstadoReserva.CANCELADA ? EstadoReserva.CONFIRMADA : EstadoReserva.CONFIRMADA;
-
-        await this.prisma.$transaction(async (tx) => {
-          // decremento cupo del turno anterior
-          await tx.turno.update({
-            where: { id: reservaActual.turno_id },
-            data: { cantidad_inscriptos: { decrement: 1 } },
-          });
-
-          // incremento cupo del nuevo turno
-          await tx.turno.update({
-            where: { id: nuevoTurno.id },
-            data: { cantidad_inscriptos: { increment: 1 } },
-          });
-
-          const cantReprogramacionesNueva = reservaActual.cant_reprogramaciones + 1;
-          await tx.reserva.update({
-            where: { id },
-            data: {
-              turno_id: nuevoTurno.id,
-              estado: nuevoEstado,
-              cant_reprogramaciones: { increment: 1 },
-            },
-          });
-
-          // Nota: la pérdida de descuento se maneja en otra HU. Devolvemos una bandera para el front.
-          // Pierde descuento si llega a 2 reprogramaciones (o 2 ausencias, que se controla aparte).
-          // No persistimos nada todavía.
-          void cantReprogramacionesNueva;
-        });
-      } catch (error) {
-        this.logger.error(`Error al reprogramar la reserva: ${String(error)}`);
-        throw new InternalServerErrorException('Ocurrió un error inesperado al reprogramar el turno');
-      }
-
-      const cantReprogramaciones = reservaActual.cant_reprogramaciones + 1;
-      const ausencias = await this.prisma.reserva.count({
-        where: { paciente_id: pacienteId, estado: EstadoReserva.AUSENTE },
-      });
-      const pierdeDescuento = cantReprogramaciones >= 2 || ausencias >= 2;
-      return { message: 'Turno reprogramado con éxito. Usted acumula ahora una reprogramación desde el turno original. En caso de volver a reprogramar, alcanzará el limite de reprogramaciones y perderá la posibilidad de recibir un descuento el próximo mes', cantReprogramaciones, pierdeDescuento };
+      return this.ejecutarReprogramacion(id, reservaActual, updateReservaDto.turno_id!);
     }
 
     // Caso 3: cambio de turno + estado: no soportado (evita ambigüedad)
     throw new BadRequestException('Operación no soportada');
+  }
+
+  async reprogramarPresencial(reservaId: number, nuevoTurnoId: number) {
+    const reserva = await this.assertReservaExiste(reservaId);
+    if (reserva.estado === EstadoReserva.CANCELADA) {
+      throw new BadRequestException('No es posible reprogramar una reserva cancelada');
+    }
+    return this.ejecutarReprogramacion(reservaId, reserva, nuevoTurnoId, true);
+  }
+
+  async cancelarPresencial(reservaId: number) {
+    const reserva = await this.assertReservaExiste(reservaId);
+    if (reserva.estado === EstadoReserva.CANCELADA) {
+      return { message: 'Turno cancelado' };
+    }
+    try {
+      await this.cancelarReserva(reservaId, reserva.turno_id);
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      this.logger.error(`Error al cancelar la reserva presencial: ${String(error)}`);
+      throw new InternalServerErrorException('Ocurrió un error inesperado al cancelar el turno');
+    }
+    return { message: 'Turno cancelado' };
+  }
+
+  private async assertReservaExiste(reservaId: number) {
+    const reserva = await this.prisma.reserva.findUnique({
+      where: { id: reservaId },
+      include: { turno: true },
+    });
+    if (!reserva) {
+      throw new NotFoundException('La reserva no existe');
+    }
+    return reserva;
+  }
+
+  private mensajeReprogramacionExitosa(cantReprogramaciones: number, presencial = false): string {
+    if (presencial) {
+      if (cantReprogramaciones >= 2) {
+        return 'Turno reprogramado con éxito. El paciente alcanzó el límite de reprogramaciones desde el turno original y perdió la posibilidad de recibir un descuento el próximo mes en turnos fijos';
+      }
+      return 'Turno reprogramado con éxito. El paciente acumula ahora una reprogramación desde el turno original. En caso de volver a reprogramar, el paciente alcanzará el limite de reprogramaciones y perderá la posibilidad de recibir un descuento el próximo mes';
+    }
+    if (cantReprogramaciones >= 2) {
+      return 'Turno reprogramado con éxito. Usted alcanzó el límite de reprogramaciones desde el turno original y perdió la posibilidad de recibir un descuento el próximo mes en turnos fijos';
+    }
+    return 'Turno reprogramado con éxito. Usted acumula ahora una reprogramación desde el turno original. En caso de volver a reprogramar, alcanzará el limite de reprogramaciones y perderá la posibilidad de recibir un descuento el próximo mes';
+  }
+
+  private async ejecutarReprogramacion(
+    reservaId: number,
+    reservaActual: { id: number; paciente_id: number; turno_id: number; cant_reprogramaciones: number; estado: EstadoReserva; turno: { fecha: Date; hora_inicio: Date } },
+    nuevoTurnoId: number,
+    presencial = false,
+  ) {
+    const horas = this.horasHastaTurno(reservaActual);
+    if (horas < 48) {
+      throw new BadRequestException('No es posible reprogramar porque restan menos de 48 horas para el inicio del turno');
+    }
+
+    if (reservaActual.cant_reprogramaciones >= 2) {
+      throw new BadRequestException(
+        presencial
+          ? 'No es posible reprogramar este turno porque el paciente alcanzó el limite de reprogramaciones'
+          : 'No es posible reprogramar este turno porque alcanzó el limite de reprogramaciones',
+      );
+    }
+
+    const nuevoTurno = await this.prisma.turno.findUnique({ where: { id: nuevoTurnoId } });
+    if (!nuevoTurno) throw new BadRequestException('El turno especificado no existe');
+
+    if (
+      nuevoTurnoId === reservaActual.turno_id ||
+      this.mismaFechaYHoraTurno(
+        reservaActual.turno.fecha,
+        reservaActual.turno.hora_inicio,
+        nuevoTurno.fecha,
+        nuevoTurno.hora_inicio,
+      )
+    ) {
+      throw new BadRequestException(
+        presencial
+          ? 'No es posible reprogramar al mismo día y horario del turno actual'
+          : 'No es posible reprogramar al mismo día y horario de su turno actual',
+      );
+    }
+
+    const nuevoTurnoFechaHora = this.buildTurnoDateTimeUTC(nuevoTurno.fecha, nuevoTurno.hora_inicio);
+    if (nuevoTurnoFechaHora.getTime() <= Date.now()) {
+      throw new BadRequestException('No se puede reprogramar a un turno en el pasado o que ya comenzó');
+    }
+
+    if (nuevoTurno.estado === 'CANCELADO') {
+      throw new BadRequestException('El turno seleccionado no se encuentra disponible');
+    }
+    if (nuevoTurno.cantidad_inscriptos >= nuevoTurno.capacidad) {
+      throw new BadRequestException('El turno seleccionado no posee cupos disponibles');
+    }
+
+    const yaTieneConflicto = await this.prisma.reserva.findFirst({
+      where: {
+        paciente_id: reservaActual.paciente_id,
+        id: { not: reservaId },
+        estado: { in: [EstadoReserva.CONFIRMADA, EstadoReserva.PENDIENTE] },
+        turno: {
+          fecha: nuevoTurno.fecha,
+          hora_inicio: nuevoTurno.hora_inicio,
+        },
+      },
+    });
+    if (yaTieneConflicto) {
+      throw new BadRequestException(
+        presencial
+          ? 'No es posible reprogramar porque el paciente ya posee otro turno en el día y horario solicitado'
+          : 'No es posible reprogramar porque ya posee otro turno en el día y horario solicitado',
+      );
+    }
+
+    try {
+      const nuevoEstado = EstadoReserva.CONFIRMADA;
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.turno.update({
+          where: { id: reservaActual.turno_id },
+          data: { cantidad_inscriptos: { decrement: 1 } },
+        });
+
+        await tx.turno.update({
+          where: { id: nuevoTurno.id },
+          data: { cantidad_inscriptos: { increment: 1 } },
+        });
+
+        await tx.reserva.update({
+          where: { id: reservaId },
+          data: {
+            turno_id: nuevoTurno.id,
+            estado: nuevoEstado,
+            cant_reprogramaciones: { increment: 1 },
+          },
+        });
+      });
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      this.logger.error(`Error al reprogramar la reserva: ${String(error)}`);
+      throw new InternalServerErrorException('Ocurrió un error inesperado al reprogramar el turno');
+    }
+
+    const cantReprogramaciones = reservaActual.cant_reprogramaciones + 1;
+    const ausencias = await this.prisma.reserva.count({
+      where: { paciente_id: reservaActual.paciente_id, estado: EstadoReserva.AUSENTE },
+    });
+    const pierdeDescuento = cantReprogramaciones >= 2 || ausencias >= 2;
+
+    return {
+      message: this.mensajeReprogramacionExitosa(cantReprogramaciones, presencial),
+      cantReprogramaciones,
+      pierdeDescuento,
+    };
   }
 
   // es para probar hasta que tengamos el pago
@@ -372,13 +477,12 @@ export class ReservaService {
         tipoActividad_id: turnoBase.tipoActividad_id,
         hora_inicio: turnoBase.hora_inicio, 
         // Convertimos los strings del front a Date para Prisma
-        fecha: { in: fechasString.map(fecha => new Date(fecha)) }, 
+        fecha: { in: fechasString.map((fecha) => this.parseFechaYYYYMMDD(fecha)) },
       },
     });
 
-    //Validar que el administrador haya creado esos turnos en el sistema
     if (turnos.length !== fechasString.length) {
-      throw new BadRequestException('No hay turnos programados en el sistema para todas las fechas solicitadas en ese horario');
+      throw new BadRequestException('No se encuentra disponibilidad de días para la fecha seleccionada');
     }
 
     // Extraemos los IDs de los turnos que encontramos para usarlos en tu lógica
@@ -390,20 +494,21 @@ export class ReservaService {
       throw new BadRequestException('No se encuentra disponibilidad de días para la fecha seleccionada');
     }
 
-    // Escenario 5: Validar si el paciente ya tiene reserva en esas fechas exactas
-
-    const where_condition = EstadoReserva.CONFIRMADA || EstadoReserva.PENDIENTE
+    // Escenario 5: Validar si el paciente ya tiene reserva en esas fechas y horarios exactos
     const fechasTurnos = turnos.map(t => t.fecha);
-    const reservaExistente = await this.prisma.reserva.findFirst({
+    const turnosConConflicto = await this.prisma.reserva.findFirst({
       where: {
         paciente_id: pacienteId,
-        turno: { fecha: { in: fechasTurnos } },
-        estado:  { in: [EstadoReserva.CONFIRMADA, EstadoReserva.PENDIENTE] }, 
+        turno: {
+          fecha: { in: fechasTurnos },
+          hora_inicio: turnoBase.hora_inicio,
+        },
+        estado: { in: [EstadoReserva.CONFIRMADA, EstadoReserva.PENDIENTE] },
       }
     });
 
-    if (reservaExistente) {
-      throw new BadRequestException('El paciente ya posee un turno para una actividad en el día y horario seleccionado');
+    if (turnosConConflicto) {
+      throw new BadRequestException('Ya posee un turno para una actividad en el día y horario seleccionado');
     }
 
     //Escenario 1, 2 y 3: Calcular el descuento
@@ -445,23 +550,82 @@ export class ReservaService {
           });
         }
 
+        // Guardar el descuento si corresponde (para auditoría y futuros pagos)
+        if (aplicaDescuento) {
+          const ahora = new Date();
+          // Obtener el primer día del mes actual para mes_aplicable
+          const mesAplicable = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+          
+          await tx.descuento.create({
+            data: {
+              paciente_id: pacienteId,
+              porcentaje: new Decimal(20),
+              motivo: 'Reserva de turnos fijos sin ausencias ni reprogramaciones',
+              mes_aplicable: mesAplicable,
+              utilizado: false,
+            }
+          });
+        }
+
         // ACÁ IRÍA LA LÓGICA DEL PAGO (redirige, genera el link, etc).
         // Si el pago falla o da error la promesa del pago, se lanza un throw Error, 
         // lo que hace que Prisma cancele esta transacción (rollback automático).
       });
 
+      // Determinar el mensaje específico según el escenario
+      let mensajeRespuesta: string;
+      
+      if (ausencias >= 2) {
+        mensajeRespuesta = 'Reserva exitosa sin descuento aplicado por poseer dos ausencias';
+      } else if (totalReprogramaciones >= 2) {
+        mensajeRespuesta = 'Reserva exitosa sin descuento aplicado por poseer dos reprogramaciones';
+      } else {
+        mensajeRespuesta = 'Reserva exitosa con descuento aplicado';
+      }
+
       return {
-        message: 'Reserva exitosa',
+        message: mensajeRespuesta,
         descuentoAplicado: `${porcentajeDescuento}%`,
         cantidadTurnos: turnosIds.length
       };
 
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       this.logger.error(`Error al procesar la reserva fija: ${String(error)}`);
       throw new InternalServerErrorException(
         'Ocurrió un error inesperado al procesar la reserva. Ningún cobro fue realizado. Por favor, intente nuevamente más tarde.'
       );
     }
+  }
+
+  // Permite al personal administrativo u owner crear una reserva (única) indicando el email del paciente
+  async createForEmail(createReservaDto: CreateReservaDto, email: string) {
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { email },
+      include: { paciente: true },
+    });
+
+    if (!usuario || !usuario.paciente) {
+      throw new BadRequestException('El email no corresponde a un usuario registrado');
+    }
+
+    return this.create(createReservaDto, usuario.paciente.id);
+  }
+
+  // Permite al personal administrativo u owner crear reservas fijas indicando el email del paciente
+  async crearReservaFijaForEmail(email: string, turnoInicialId: number, fechasString: string[]) {
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { email },
+      include: { paciente: true },
+    });
+
+    if (!usuario || !usuario.paciente) {
+      throw new BadRequestException('El email no corresponde a un usuario registrado');
+    }
+
+    return this.crearReservaFija(usuario.paciente.id, turnoInicialId, fechasString);
   }
 
 }

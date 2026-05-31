@@ -5,6 +5,7 @@ export interface Inscripto {
   id: number
   nombre: string
   apellido: string
+  email: string
   estado: EstadoReserva
   pagado: boolean
 }

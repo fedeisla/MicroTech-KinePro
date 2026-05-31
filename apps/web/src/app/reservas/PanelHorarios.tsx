@@ -1,5 +1,8 @@
 import { Clock, Loader2, CalendarDays, ClipboardList, CheckCircle2 } from 'lucide-react';
 import { RangoHorarioBackend, Actividad } from '@/types/turno';
+import { useState } from 'react';
+import { toast } from 'sonner';
+import { crearPaciente } from '@/services/usuariosService';
 
 interface Props {
   diaSeleccionado: number | null;
@@ -10,13 +13,37 @@ interface Props {
   actividadSeleccionada: Actividad | null;
   setActividadSeleccionada: (act: Actividad | null) => void;
   handleConfirmarTurno: () => void;
+  adminMode?: boolean;
+  adminEmail?: string;
+  setAdminEmail?: (email: string) => void;
 }
 
 export default function PanelHorarios({
   diaSeleccionado, horariosDelDia, cargandoHorarios, 
   rangoSeleccionado, setRangoSeleccionado, 
   actividadSeleccionada, setActividadSeleccionada, handleConfirmarTurno
+  , adminMode = false, adminEmail = '', setAdminEmail
 }: Props) {
+
+  const [showRegistro, setShowRegistro] = useState(false);
+  const [nombre, setNombre] = useState('');
+  const [apellido, setApellido] = useState('');
+  const [dni, setDni] = useState('');
+  const [telefono, setTelefono] = useState('');
+  const [fechaNacimiento, setFechaNacimiento] = useState('');
+  const [password, setPassword] = useState('12345678');
+
+  const handleRegistrarPaciente = async () => {
+    try {
+      if (!adminEmail) return toast.error('Ingrese un email antes de registrar');
+      await crearPaciente({ nombre, apellido, dni, telefono, email: adminEmail, password, fechaNacimiento });
+      toast.success('Paciente registrado con éxito');
+      setShowRegistro(false);
+      setNombre(''); setApellido(''); setDni(''); setTelefono(''); setFechaNacimiento('');
+    } catch (err: any) {
+      toast.error('No se pudo registrar al paciente', { description: err.message || String(err) });
+    }
+  };
 
   const handleSeleccionarHorario = (rango: RangoHorarioBackend) => {
     setRangoSeleccionado(rango);
@@ -103,6 +130,30 @@ export default function PanelHorarios({
 
       {/* 3. BOTÓN DE CONFIRMACIÓN */}
       <div className="mt-6 pt-4 border-t border-slate-100">
+        {adminMode && (
+          <div className="mb-3">
+            <label className="text-xs text-slate-600 mb-1 block">Email del paciente</label>
+            <input value={adminEmail} onChange={(e) => setAdminEmail?.(e.target.value)} placeholder="email@ejemplo.com" className="w-full p-2 border rounded-md text-sm" />
+            <div className="flex gap-2 mt-2">
+              <button type="button" onClick={() => setShowRegistro(s => !s)} className="px-3 py-1 rounded-md text-sm bg-slate-100 hover:bg-slate-200">{showRegistro ? 'Cancelar registro' : 'Registrar paciente'}</button>
+            </div>
+            {showRegistro && (
+              <div className="mt-3 bg-white border p-3 rounded-md">
+                <div className="grid grid-cols-2 gap-2">
+                  <input placeholder="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} className="p-2 border rounded-md text-sm" />
+                  <input placeholder="Apellido" value={apellido} onChange={(e) => setApellido(e.target.value)} className="p-2 border rounded-md text-sm" />
+                  <input placeholder="DNI" value={dni} onChange={(e) => setDni(e.target.value)} className="p-2 border rounded-md text-sm" />
+                  <input placeholder="Teléfono" value={telefono} onChange={(e) => setTelefono(e.target.value)} className="p-2 border rounded-md text-sm" />
+                  <input placeholder="Fecha nacimiento (YYYY-MM-DD)" value={fechaNacimiento} onChange={(e) => setFechaNacimiento(e.target.value)} className="p-2 border rounded-md text-sm col-span-2" />
+                  <input placeholder="Contraseña" value={password} onChange={(e) => setPassword(e.target.value)} className="p-2 border rounded-md text-sm col-span-2" />
+                </div>
+                <div className="mt-3 flex justify-end">
+                  <button onClick={handleRegistrarPaciente} className="px-4 py-2 rounded-md bg-teal-600 text-white">Registrar</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <button
           onClick={handleConfirmarTurno}
           disabled={!diaSeleccionado || !rangoSeleccionado || !actividadSeleccionada}
