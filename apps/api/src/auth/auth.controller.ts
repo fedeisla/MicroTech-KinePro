@@ -20,4 +20,12 @@ export class AuthController {
     }
     return await this.authService.desbloquearCuenta(token);
   }
+
+  @Public()
+  @Post('solicitar-desbloqueo')
+  async solicitarDesbloqueo(@Body() body: { email: string;}) 
+  {
+    return await this.authService.solicitarDesbloqueo(body.email);
+  }
+
 }

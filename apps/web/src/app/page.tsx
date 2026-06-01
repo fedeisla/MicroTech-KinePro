@@ -14,6 +14,7 @@ export default function HomePage() {
   const puedeReservar = !cargando && isAuthenticated && rol === 'PACIENTE';
   const esAdminOwner = !cargando && isAuthenticated && (rol === 'ADMIN' || rol === 'OWNER');
 
+
   return (
     <div className="w-full flex flex-col gap-6">
       {/* 1. Cartel de Bienvenida / Pasos y Auth */}

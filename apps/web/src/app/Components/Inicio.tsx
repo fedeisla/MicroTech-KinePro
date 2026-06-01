@@ -65,6 +65,7 @@ export default function Inicio() {
       const procesarDesbloqueo = async () => {
         try {
           const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/desbloquear?token=${tokenUrl}`);
+          console.log("llegue al token")
           const data = await res.json();
 
           if (res.ok) {

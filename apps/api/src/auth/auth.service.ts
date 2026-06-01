@@ -98,31 +98,69 @@ export class AuthService {
 
   async desbloquearCuenta(token: string) {
     try {
-      //Verificamos el token. Si pasaron los 15 minutos, esto lanza un error automáticamente
       const payload = this.jwtService.verify(token);
-
-      //Validamos que el token sea efectivamente para desbloquear 
-      if (payload.accion !== 'desbloquear_cuenta') {
+      if (payload.tipo !== 'desbloquear_cuenta') {
         throw new BadRequestException('Token inválido para esta acción.');
       }
-
-      //Buscamos el usuario y restablecemos sus contadores
       await this.prisma.usuario.update({
-        where: { id: payload.id },
+        where: { id: payload.id }, 
         data: { 
           bloqueado: false, 
-          intentosFallidos: 0 
+          intentosFallidos: 0,
+          token: null
         },
       });
 
       return { message: 'Cuenta desbloqueada con éxito. Ya puedes volver a iniciar sesión.' };
 
     } catch (error) {
+     
       throw new BadRequestException(
-        'El enlace de desbloqueo ha expirado o es inválido. Intenta iniciar sesión para generar uno nuevo.'
+        'El enlace de desbloqueo ha expirado o es inválido.'
       );
     }
-  }
+}
+
+  async solicitarDesbloqueo(email: string) {
+    //Buscamos al usuario en la base de datos
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { email },
+    });
+
+  
+  
+    const mensajeExito = { 
+      message: 'Si el correo está registrado y la cuenta está bloqueada, recibirás un enlace de recuperación.' 
+    };
+
+    if (!usuario) {
+      return mensajeExito;
+    }
+
+    // 3. Verificamos si la cuenta realmente está bloqueada
+    if (!usuario.bloqueado) {
+      return { message: 'Esta cuenta no se encuentra bloqueada actualmente.' };
+    }
+
+    const payload = { 
+      id: usuario.id, 
+      email: usuario.email, 
+      tipo: 'desbloquear_cuenta' 
+    };
+
+    const token = this.jwtService.sign(payload, { expiresIn: '15m' });
+
+    await this.prisma.usuario.update({
+      where: { id: usuario.id },
+      data: { token: token }, 
+    });
+
+    
+    await this.mailService.sendSolicitudDesbloqueoEmail(usuario.email, token);
+
+    return mensajeExito;
+  } 
+
 
 
 }

@@ -1,12 +1,14 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { JwtService } from '@nestjs/jwt';
 import { CreatePacienteDto, LogoutDto, LoginDto, CallRestoreContrasenaDto, AsignarRolDto } from './usuarios.dto';
 import { UpdateUsuarioDto,UpdateContrasenaDto, UnlockAccountDto, RestoreContrasenaNuevaDto } from './usuarios.dto';
 import crypto from 'crypto';
+import { MailService } from '@/mail/mail.service';
 
 @Injectable()
 export class UsuariosService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private readonly mailService: MailService,private readonly jwtService: JwtService) {}
 
   async registrar(dto: CreatePacienteDto) {
     // Escenario 2: Registro fallido por DNI ya registrado
@@ -131,10 +133,7 @@ export class UsuariosService {
     return { message: 'Modificacion de datos exitosa' };
   }
 
-  async desbloquearCuentaEmail(token: string) {
-    const baseUrl = process.env.WEB_ORIGIN ?? 'http://localhost:3000';
-    console.log(`Correo de desbloqueo. Enlace: ${baseUrl}/desbloqueo?token=${token}`);
-  }
+  
 
  
   async cerrarSesion(dto: LogoutDto) {
@@ -177,30 +176,39 @@ export class UsuariosService {
   }
 
   async callRestablecerContrasena(dto: CallRestoreContrasenaDto) {
-    const mensajeEnlace =
-      'Si la dirección proporcionada pertenece a una cuenta, recibirás un enlace para restablecer tu contraseña.';
+    const { email } = dto;
 
-    const usuarioRestablecer = await this.prisma.usuario.findUnique({
-      where: { email: dto.email },
-    });
+    // Busco al usuario en la base de datos
+    const usuario = await this.prisma.usuario.findUnique({ where: { email } });
 
-    if (usuarioRestablecer) {
-      const tokenNuevo = crypto.randomBytes(4).toString('hex');
-      await this.prisma.usuario.update({
-        where: { id: usuarioRestablecer.id },
-        data: { token: tokenNuevo },
-      });
-      this.enviarCorreoRestablecimiento(usuarioRestablecer.email, tokenNuevo);
+    // Simplemente retornas un mensaje de éxito aunque no exista, pero solo envías el correo si existe.
+    if (!usuario) {
+      return { message: 'Si el correo está registrado, recibirás un enlace de recuperación.' };
     }
 
-    return { message: mensajeEnlace };
-  }
+    //Genero un token seguro usando JWT
+    // y estableces una fecha de expiración.
+    const payload = { 
+      sub: usuario.id, 
+      email: usuario.email,
+      tipo: 'restablecimiento_password' 
+    };
+    const token = this.jwtService.sign(payload, {
+      expiresIn: '30m', 
+    });
+   
+   await this.prisma.usuario.update({
+      where: { 
+        email: email 
+      },
+      data: {
+        token: token 
+      }
+    });
+  
+    await this.mailService.sendPasswordResetEmail(email, token);
 
-  async enviarCorreoRestablecimiento(email: string, token: string) {
-    const baseUrl = process.env.WEB_ORIGIN ?? 'http://localhost:3000';
-    console.log(
-      `Correo enviado a ${email}. Enlace: ${baseUrl}/restablecer?token=${token}`,
-    );
+    return { message: 'Si el correo está registrado, recibirás un enlace de recuperación.' };
   }
 
  async restablecimientoContrasena(dto: RestoreContrasenaNuevaDto) { 

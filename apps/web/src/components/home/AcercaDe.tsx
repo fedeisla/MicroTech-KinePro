@@ -1,8 +1,14 @@
 'use client'
 
-import { Info, Calendar, Clock, MessageCircle } from 'lucide-react'
+
+import { Info, Calendar, Clock, MessageCircle, Unlock } from 'lucide-react'
+import ModalDesbloqueo from '../usuarios/ModalDesbloqueo'
+import { useState } from 'react'
+
 
 export default function AcercaDe() {
+  const [modalAbierto, setModalAbierto] = useState(false)
+  
   return (
     <section id="acerca-de" className="w-full bg-white p-6 rounded-2xl shadow-sm border border-gray-100 scroll-mt-20">
       <div className="mb-6">
@@ -16,28 +22,28 @@ export default function AcercaDe() {
       </div>
 
       {/* Información de Contacto */}
-        <div className="mb-6">
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-start gap-3">
-                <Clock className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold text-slate-800">Horario de atención</p>
-                  <p className="text-sm text-slate-600">Lunes a viernes: 7:00 a 21:00 hs</p>
-                </div>
+      <div className="mb-6">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-start gap-3">
+              <Clock className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-slate-800">Horario de atención</p>
+                <p className="text-sm text-slate-600">Lunes a viernes: 7:00 a 21:00 hs</p>
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-start gap-3">
-                <MessageCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold text-slate-800">WhatsApp</p>
-                  <p className="text-sm text-slate-600">+54 9 221 123-4567</p>
-                </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-start gap-3">
+              <MessageCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-slate-800">WhatsApp</p>
+                <p className="text-sm text-slate-600">+54 9 221 123-4567</p>
               </div>
             </div>
           </div>
         </div>
+      </div>
 
       <div className="space-y-6">
         {/* Historia */}
@@ -96,6 +102,31 @@ export default function AcercaDe() {
           </div>
         </div>
       </div>
+
+      {/* Banner de Desbloqueo de Cuenta */}
+      <div className="mt-8 rounded-2xl border border-blue-200 bg-blue-50 p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-sm flex-shrink-0">
+            <Unlock className="h-6 w-6 text-blue-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-slate-800">¿Necesitás desbloquear tu cuenta?</h3>
+            <p className="text-sm text-slate-600">Recuperá el acceso para seguir gestionando tus turnos.</p>
+          </div>
+        </div>
+        
+        
+        <button 
+          onClick={() => setModalAbierto(true)}
+          className="whitespace-nowrap rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all"
+        >
+          Desbloquear cuenta
+        </button>
+      </div>
+      <ModalDesbloqueo 
+        isOpen={modalAbierto} 
+        onClose={() => setModalAbierto(false)} 
+      />
     </section>
   )
 }

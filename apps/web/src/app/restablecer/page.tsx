@@ -119,9 +119,7 @@ function RestablecerContenido() {
     <div className="mx-auto w-full max-w-md">
       <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
         <h1 className="mb-2 text-xl font-bold text-slate-800">Recuperar contraseña</h1>
-        <p className="mb-6 text-sm text-slate-500">
-          Ingresá el correo de tu cuenta. Si está registrado, recibirás un enlace de recuperación.
-        </p>
+        
 
         <form onSubmit={handleSolicitarEnlace} className="space-y-4">
           <div>
@@ -146,10 +144,6 @@ function RestablecerContenido() {
             Obtener enlace
           </button>
         </form>
-
-        {mensajeEnlace && (
-          <p className="mt-4 rounded-xl bg-teal-50 p-3 text-sm text-teal-800">{mensajeEnlace}</p>
-        )}
 
         <p className="mt-4 text-center text-sm text-slate-500">
           <Link href="/" className="text-teal-600 hover:underline">

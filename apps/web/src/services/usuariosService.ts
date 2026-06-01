@@ -42,6 +42,16 @@ export async function desbloquearCuenta(token: string): Promise<{ message: strin
     body: JSON.stringify({ token }),
   })
 }
+export async function solicitarDesbloqueo(email:string): Promise<{ message: string }> {
+  
+  return apiFetch('/auth/solicitar-desbloqueo', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }), 
+      })
+}
 
 export async function modificarDatosPersonales(payload: {
   id: number

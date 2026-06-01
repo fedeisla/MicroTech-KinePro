@@ -6,9 +6,10 @@ import { RestoreContrasenaNuevaDto, CallRestoreContrasenaDto, UnlockAccountDto }
 import { Public } from '@/auth/public.decorator';
 import { Roles } from '@/auth/roles.decorator';
 
+
 @Controller('usuarios')
 export class UsuariosController {
-  constructor(private readonly usuariosService: UsuariosService) {}
+  constructor( private readonly usuariosService: UsuariosService) {}
 
   @Public() // Permite el acceso sin autenticación a esta ruta
   @Post('registro')
@@ -44,7 +45,6 @@ export class UsuariosController {
     // y llamamos al nombre correcto del método del servicio:
     return this.usuariosService.restablecimientoContrasena(restoreContrasenaNuevaDto);
   } 
-
 
   @Roles('OWNER', 'ADMIN')
   @Get()
