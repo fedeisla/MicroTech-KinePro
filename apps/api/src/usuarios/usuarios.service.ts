@@ -216,7 +216,7 @@ export class UsuariosService {
     where: { token: dto.token },
   });
   if (!usuarioPorRestablecer || !dto.token) {
-    throw new BadRequestException('El enlace de restablecimiento es inválido o ya expiró.');
+    throw new BadRequestException('El enlace de restablecimiento es inválido o expiró.');
   }
   // Escenario 4: Fallido por contraseñas idénticas
   if (usuarioPorRestablecer.contrasena === dto.passwordNueva) {

@@ -116,7 +116,7 @@ export class AuthService {
     } catch (error) {
      
       throw new BadRequestException(
-        'El enlace de desbloqueo ha expirado o es inválido.'
+        'El enlace de restablecimiento es inválido o expiró.'
       );
     }
 }
