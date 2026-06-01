@@ -17,7 +17,6 @@ function RestablecerContenido() {
 
   const [email, setEmail] = useState('')
   const [passwordNueva, setPasswordNueva] = useState('')
-  const [passwordConfirmacion, setPasswordConfirmacion] = useState('')
   const [procesando, setProcesando] = useState(false)
   const [mensajeEnlace, setMensajeEnlace] = useState<string | null>(null)
 
@@ -40,11 +39,6 @@ function RestablecerContenido() {
   async function handleRestablecer(e: React.FormEvent) {
     e.preventDefault()
     if (!token) return
-
-    if (passwordNueva !== passwordConfirmacion) {
-      toast.error('Las contraseñas no coinciden')
-      return
-    }
 
     setProcesando(true)
     try {
@@ -77,19 +71,6 @@ function RestablecerContenido() {
                 type="password"
                 value={passwordNueva}
                 onChange={(e) => setPasswordNueva(e.target.value)}
-                required
-                minLength={8}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:border-teal-500"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Confirmar contraseña
-              </label>
-              <input
-                type="password"
-                value={passwordConfirmacion}
-                onChange={(e) => setPasswordConfirmacion(e.target.value)}
                 required
                 minLength={8}
                 className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:border-teal-500"

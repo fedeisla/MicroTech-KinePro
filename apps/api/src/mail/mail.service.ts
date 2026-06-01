@@ -131,14 +131,6 @@ export class MailService {
                   </tr>
 
                   <tr>
-                    <td align="center" style="padding: 0 40px 32px 40px;">
-                      <p style="color: #64748b; font-size: 14px; margin: 24px 0 0 0;">
-                        Este enlace de recuperación expirará en <strong>30 minutos</strong>.
-                      </p>
-                    </td>
-                  </tr>
-
-                  <tr>
                     <td style="background-color: #f8fafc; padding: 24px 40px; text-align: center; border-top: 1px solid #e2e8f0;">
                       <p style="color: #94a3b8; font-size: 12px; line-height: 18px; margin: 0;">
                         Si no solicitaste cambiar tu contraseña, puedes ignorar este correo de forma segura. Tu contraseña actual no cambiará.
