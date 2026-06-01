@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { MailCheck } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import RegistroUsuarioForm from '@/components/usuarios/RegistroUsuarioForm';
 
 
 const SOLO_LETRAS = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s']+$/;
@@ -315,8 +316,9 @@ export default function Inicio() {
             </button>
 
             <h3 className="text-lg font-bold text-slate-800 mb-4">Registrarse</h3>
+            <RegistroUsuarioForm onSuccess={() => setIsRegisterOpen(false)} />
 
-            <form onSubmit={manejarRegister} className="space-y-4">
+            {/* <form onSubmit={manejarRegister} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Nombre</label>
@@ -386,7 +388,7 @@ export default function Inicio() {
               </div>
 
               <button type="submit" className="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-2.5 rounded-xl transition-colors mt-2">Crear cuenta</button>
-            </form>
+            </form> */}
           </div>
         </div>
       )}

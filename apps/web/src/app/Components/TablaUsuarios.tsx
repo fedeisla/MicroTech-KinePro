@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Pencil, Trash2, Loader2, AlertCircle } from 'lucide-react'; 
+import { Pencil, Trash2, Loader2, AlertCircle, Plus } from 'lucide-react';
 import TablaGenerica, { Columna } from './TablaGenerica';
 import UsuarioModal from '@/components/usuarios/UsuarioModal';
 import ConfirmDialog from './ConfirmDialog';
+import RegistroUsuarioForm from '@/components/usuarios/RegistroUsuarioForm';
 import { useAuth } from '@/hooks/useAuth';
 import { obtenerUsuarioPorId, eliminarUsuario } from '@/services/usuariosService';
 import type { Usuario } from '@/types/usuario';
@@ -21,8 +22,9 @@ export default function TablaUsuarios() {
   const [usuarioEnEdicion, setUsuarioEnEdicion] = useState<Usuario | null>(null);
   const [usuarioAEliminar, setUsuarioAEliminar] = useState<Usuario | null>(null);
   const [eliminando, setEliminando] = useState(false);
+  const [modalRegistroAbierto, setModalRegistroAbierto] = useState(false);
 
-  async function cargarUsuarios() {
+  const cargarUsuarios = async () => {
     setCargando(true);
     setError(null);
     try {
@@ -33,14 +35,14 @@ export default function TablaUsuarios() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
       });
-    
+
       const json = await respuesta.json().catch(() => null);
-    
+
       if (!respuesta.ok) {
         const msg = json?.message ?? 'Error al cargar los usuarios';
         throw new Error(Array.isArray(msg) ? msg.join(', ') : msg);
       }
-    
+
       setUsuarios(json.data || []);
     } catch (e: any) {
       setError(e.message);
@@ -49,7 +51,7 @@ export default function TablaUsuarios() {
     } finally {
       setCargando(false);
     }
-  }
+  };
 
   useEffect(() => {
     cargarUsuarios();
@@ -86,28 +88,28 @@ export default function TablaUsuarios() {
 
   // Configuración de las columnas con los nuevos iconos vectoriales
   const columnasConfig: Columna<Usuario>[] = [
-    { 
-      encabezado: 'Nombre y Apellido', 
-      render: (u) => <span className="font-medium text-slate-800">{u.nombre} {u.apellido}</span> 
+    {
+      encabezado: 'Nombre y Apellido',
+      render: (u) => <span className="font-medium text-slate-800">{u.nombre} {u.apellido}</span>,
     },
-    { 
-      encabezado: 'DNI', 
-      render: (u) => <span className="text-slate-500 font-mono">{u.dni}</span> 
+    {
+      encabezado: 'DNI',
+      render: (u) => <span className="text-slate-500 font-mono">{u.dni}</span>,
     },
-    { 
-      encabezado: 'Email', 
-      accessor: 'email' 
+    {
+      encabezado: 'Email',
+      accessor: 'email',
     },
-    { 
-      encabezado: 'Teléfono', 
-      render: (u) => <span className="text-slate-500">{u.telefono || '-'}</span> 
+    {
+      encabezado: 'Teléfono',
+      render: (u) => <span className="text-slate-500">{u.telefono || '-'}</span>,
     },
     {
       encabezado: 'Rol',
-      render: (u) => <span className="text-slate-500 text-xs font-semibold">{u.rol}</span>
+      render: (u) => <span className="text-slate-500 text-xs font-semibold">{u.rol}</span>,
     },
-    { 
-      encabezado: 'Acciones', 
+    {
+      encabezado: 'Acciones',
       render: (u) => (
         <div className="flex items-center justify-center gap-2">
           <button
@@ -127,11 +129,10 @@ export default function TablaUsuarios() {
             <span>Eliminar</span>
           </button>
         </div>
-      )
-    }
+      ),
+    },
   ];
 
- 
   if (cargando) {
     return (
       <div className="flex flex-col items-center justify-center p-12 gap-3 w-full bg-white rounded-2xl border border-slate-100 shadow-sm">
@@ -140,7 +141,6 @@ export default function TablaUsuarios() {
       </div>
     );
   }
-
 
   if (error) {
     return (
@@ -155,23 +155,31 @@ export default function TablaUsuarios() {
 
   return (
     <div className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-      
       {/* Encabezado de la sección */}
       <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
         <div>
           <h2 className="text-xl font-bold text-slate-800">Listado de Usuarios</h2>
           <p className="text-xs text-slate-400 mt-0.5">Gestión y control de cuentas registradas</p>
         </div>
-        <span className="bg-teal-50 text-teal-700 text-xs font-bold px-3 py-1.5 rounded-full border border-teal-100">
-          Total: {usuarios.length}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="bg-teal-50 text-teal-700 text-xs font-bold px-3 py-1.5 rounded-full border border-teal-100">
+            Total: {usuarios.length}
+          </span>
+          <button
+            onClick={() => setModalRegistroAbierto(true)}
+            className="bg-kine-blue hover:bg-kine-blue-deep text-white text-sm font-semibold px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Registrar usuario
+          </button>
+        </div>
       </div>
 
       {/* Componente Genérico */}
-      <TablaGenerica 
-        datos={usuarios} 
-        columnas={columnasConfig} 
-        mensajeVacio="No hay usuarios registrados en el sistema." 
+      <TablaGenerica
+        datos={usuarios}
+        columnas={columnasConfig}
+        mensajeVacio="No hay usuarios registrados en el sistema."
       />
 
       {/* Modal de Modificación */}
@@ -199,6 +207,29 @@ export default function TablaUsuarios() {
         onConfirmar={confirmarEliminar}
         onCancelar={() => setUsuarioAEliminar(null)}
       />
+
+      {/* Modal de Registro Presencial */}
+      {modalRegistroAbierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 relative">
+            <button
+              onClick={() => setModalRegistroAbierto(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-lg"
+              aria-label="Cerrar"
+            >
+              ✕
+            </button>
+            <h3 className="text-lg font-bold text-slate-800 mb-4">Registrar usuario</h3>
+            <RegistroUsuarioForm
+              textoBoton="Registrar usuario"
+              onSuccess={() => {
+                setModalRegistroAbierto(false);
+                cargarUsuarios();
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
