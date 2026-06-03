@@ -37,19 +37,25 @@ export class AuthService {
       });
 
       if (nuevosIntentos === 3) {
+        const payloadDesbloqueo = {
+          id: usuarioIngresado.id,
+          email: usuarioIngresado.email,
+          tipo: 'desbloquear_cuenta',
+        };
+        const tokenDesbloqueo = this.jwtService.sign(payloadDesbloqueo, {
+          expiresIn: '15m',
+        });
+
         await this.prisma.usuario.update({
           where: { id: usuarioIngresado.id },
-          data: { bloqueado: true },
+          data: { bloqueado: true, token: tokenDesbloqueo },
         });
-        
-        const tokenDesbloqueo = this.jwtService.sign(
-          { id: usuarioIngresado.id, accion: 'desbloquear_cuenta' },
-          { expiresIn: '15m' } 
-        );
-        
-        
-        this.mailService.sendUnlockEmail(usuarioIngresado.email, tokenDesbloqueo)
-          .catch(err => console.error('Error enviando email de desbloqueo:', err));
+
+        this.mailService
+          .sendUnlockEmail(usuarioIngresado.email, tokenDesbloqueo)
+          .catch((err) =>
+            console.error('Error enviando email de desbloqueo:', err),
+          );
           
         throw new BadRequestException(
           'Datos incorrectos. La cuenta fue bloqueada y se le envió un email al correo asociado para desbloquearla.'
@@ -99,7 +105,10 @@ export class AuthService {
   async desbloquearCuenta(token: string) {
     try {
       const payload = this.jwtService.verify(token);
-      if (payload.tipo !== 'desbloquear_cuenta') {
+      const esTokenDesbloqueo =
+        payload.tipo === 'desbloquear_cuenta' ||
+        payload.accion === 'desbloquear_cuenta';
+      if (!esTokenDesbloqueo) {
         throw new BadRequestException('Token inválido para esta acción.');
       }
       await this.prisma.usuario.update({
