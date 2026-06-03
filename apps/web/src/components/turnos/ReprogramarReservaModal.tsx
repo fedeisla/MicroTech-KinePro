@@ -3,8 +3,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import InfoDialog, { tituloYMensajeDesdeApi, type InfoDialogVariante } from '@/app/Components/InfoDialog'
 import { apiFetch } from '@/lib/api'
 import { reprogramarReserva, reprogramarReservaPresencial } from '@/services/reservasService'
+
+type ResultadoDialog = {
+  variante: InfoDialogVariante
+  titulo: string
+  mensaje: string
+  alCerrar?: () => void
+}
 
 type TurnoDisponibleApi = {
   id: number
@@ -49,13 +57,21 @@ export default function ReprogramarReservaModal({
   const [cargandoTurnos, setCargandoTurnos] = useState(false)
   const [turnoId, setTurnoId] = useState<string>('')
   const [guardando, setGuardando] = useState(false)
+  const [resultadoDialog, setResultadoDialog] = useState<ResultadoDialog | null>(null)
 
   useEffect(() => {
     if (!abierto) return
     setFecha(fechaActual ?? '')
     setTurnoId('')
     setTurnos([])
+    setResultadoDialog(null)
   }, [abierto, fechaActual])
+
+  function cerrarResultadoDialog() {
+    const alCerrar = resultadoDialog?.alCerrar
+    setResultadoDialog(null)
+    alCerrar?.()
+  }
 
   useEffect(() => {
     if (!abierto) return
@@ -99,11 +115,26 @@ export default function ReprogramarReservaModal({
       const res = presencial
         ? await reprogramarReservaPresencial(reservaId, Number(turnoId))
         : await reprogramarReserva(reservaId, Number(turnoId))
-      toast.success(res.message)
-      onReprogramado()
-      onClose()
+      const { titulo, mensaje } = tituloYMensajeDesdeApi(res.message)
+      const variante: InfoDialogVariante =
+        res.pierdeDescuento || (res.cantReprogramaciones ?? 0) >= 2 ? 'advertencia' : 'exito'
+      setResultadoDialog({
+        variante,
+        titulo,
+        mensaje,
+        alCerrar: () => {
+          onReprogramado()
+          onClose()
+        },
+      })
     } catch (e: any) {
-      toast.error('No se pudo reprogramar', { description: e.message })
+      const detalle = e?.message ?? 'Ocurrió un error inesperado. Intentá de nuevo.'
+      const parsed = tituloYMensajeDesdeApi(detalle)
+      setResultadoDialog({
+        variante: 'error',
+        titulo: parsed.mensaje ? parsed.titulo : 'No se pudo reprogramar',
+        mensaje: parsed.mensaje || detalle,
+      })
     } finally {
       setGuardando(false)
     }
@@ -180,6 +211,14 @@ export default function ReprogramarReservaModal({
           </button>
         </div>
       </div>
+
+      <InfoDialog
+        abierto={resultadoDialog !== null}
+        variante={resultadoDialog?.variante ?? 'exito'}
+        titulo={resultadoDialog?.titulo ?? ''}
+        mensaje={resultadoDialog?.mensaje}
+        onCerrar={cerrarResultadoDialog}
+      />
     </div>
   )
 }
