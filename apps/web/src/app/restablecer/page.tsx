@@ -40,6 +40,11 @@ function RestablecerContenido() {
     e.preventDefault()
     if (!token) return
 
+    if (passwordNueva.length < 8) {
+      toast.error('La contraseña debe contener mínimo 8 caracteres')
+      return
+    }
+
     setProcesando(true)
     try {
       const res = await restablecerContrasena({ token, passwordNueva })
@@ -72,7 +77,6 @@ function RestablecerContenido() {
                 value={passwordNueva}
                 onChange={(e) => setPasswordNueva(e.target.value)}
                 required
-                minLength={8}
                 className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:border-teal-500"
               />
             </div>
