@@ -148,7 +148,7 @@ export class AuthService {
 
     // 3. Verificamos si la cuenta realmente está bloqueada
     if (!usuario.bloqueado) {
-      return { message: 'Esta cuenta no se encuentra bloqueada actualmente.' };
+      return { message: 'Si el correo está registrado y la cuenta está bloqueada, recibirás un enlace de recuperación.' };
     }
 
     const payload = { 
