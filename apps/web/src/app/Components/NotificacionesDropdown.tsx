@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useState } from 'react';
-import { Bell, CheckCheck, CalendarPlus, AlertTriangle, Info, History } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Bell, CheckCheck, CalendarPlus, AlertTriangle, Info } from 'lucide-react';
+import { apiFetch } from '@/lib/api';
+import { useAuth } from '@/hooks/useAuth';
 
 type Notificacion = {
   id: number;
@@ -14,34 +16,83 @@ type Notificacion = {
 
 export default function NotificacionesDropdown() {
   const [isOpen, setIsOpen] = useState(false);
+  const { token } = useAuth();
 
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
 
   const noLeidasCount = notificaciones.filter(n => !n.leida).length;
 
-  const marcarTodasComoLeidas = () => {
-    setNotificaciones(notificaciones.map(n => ({ ...n, leida: true })));
+  const marcarTodasComoLeidas = async () => {
+    try {
+      await apiFetch('/notificaciones/marcar-leidas', { method: 'PATCH' });
+      setNotificaciones(notificaciones.map((n) => ({ ...n, leida: true })));
+    } catch (err) {
+      console.error('No se pudieron marcar como leídas', err);
+    }
   };
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const fetchNotis = async () => {
+      try {
+        const data = await apiFetch<any[]>('/notificaciones');
+        setNotificaciones(data.slice(0, 4));
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    fetchNotis();
+  }, [isOpen]);
+
   const obtenerIconoTipo = (tipo: string) => {
-    switch (tipo) {
-      case 'turno':
+    const t = tipo?.toString().toUpperCase();
+    switch (t) {
+      case 'TURN0':
+      case 'TURNO':
+      case 'INFORMATIVA':
+      case 'RECORDATORIO':
         return {
           icono: <CalendarPlus className="w-4 h-4 text-emerald-600" />,
           bgColor: 'bg-emerald-50 border-emerald-100'
         };
-      case 'alerta':
+      case 'CANCELACION_TURNO':
+      case 'ALERTA':
         return {
           icono: <AlertTriangle className="w-4 h-4 text-rose-600" />,
           bgColor: 'bg-rose-50 border-rose-100'
         };
-      case 'sistema':
+      case 'SISTEMA':
       default:
         return {
           icono: <Info className="w-4 h-4 text-blue-600" />,
           bgColor: 'bg-blue-50 border-blue-100'
         };
     }
+  };
+
+  const formatearTiempoTranscurrido = (isoFecha: string) => {
+    const fecha = new Date(isoFecha);
+    if (Number.isNaN(fecha.getTime())) return isoFecha;
+
+    const ahora = Date.now();
+    const diferenciaSegundos = Math.floor((ahora - fecha.getTime()) / 1000);
+
+    if (diferenciaSegundos < 60) {
+      return 'hace unos segundos';
+    }
+
+    const diferenciaMinutos = Math.floor(diferenciaSegundos / 60);
+    if (diferenciaMinutos < 60) {
+      return `hace ${diferenciaMinutos} minuto${diferenciaMinutos === 1 ? '' : 's'}`;
+    }
+
+    const diferenciaHoras = Math.floor(diferenciaMinutos / 60);
+    if (diferenciaHoras < 24) {
+      return `hace ${diferenciaHoras} hora${diferenciaHoras === 1 ? '' : 's'}`;
+    }
+
+    const diferenciaDias = Math.floor(diferenciaHoras / 24);
+    return `hace ${diferenciaDias} día${diferenciaDias === 1 ? '' : 's'}`;
   };
 
   return (
@@ -107,7 +158,7 @@ export default function NotificacionesDropdown() {
                           <h4 className={`text-sm truncate ${notif.leida ? 'font-medium text-slate-700' : 'font-bold text-slate-900'}`}>
                             {notif.titulo}
                           </h4>
-                          <span className="text-[10px] font-semibold text-slate-400 shrink-0 uppercase tracking-wider">{notif.tiempo}</span>
+                          <span className="text-[10px] font-semibold text-slate-400 shrink-0 uppercase tracking-wider">{formatearTiempoTranscurrido(notif.tiempo)}</span>
                         </div>
                         <p className="text-xs text-slate-500 mt-1 leading-normal">
                           {notif.descripcion}
@@ -123,17 +174,7 @@ export default function NotificacionesDropdown() {
               )}
             </div>
 
-            {/* Footer del panel */}
-            <div className="border-t border-slate-100 bg-slate-50/30">
-              <a 
-                href="#todas-notificaciones" 
-                onClick={() => setIsOpen(false)}
-                className="text-center p-3 text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors flex items-center justify-center gap-2"
-              >
-                <History className="w-3.5 h-3.5 text-slate-400" />
-                Ver todo el historial
-              </a>
-            </div>
+            {/* Footer eliminado: siempre mostramos las últimas 4 notificaciones */}
 
           </div>
         </>

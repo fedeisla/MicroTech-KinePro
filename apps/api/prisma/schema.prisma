@@ -191,6 +191,7 @@ model Reserva {
 
   // Relaciones inversas
   pagos                 Pago[]
+  notificaciones        Notificacion[]
 }
 
 model Pago {
@@ -229,8 +230,13 @@ model Notificacion {
   id          Int                @id @default(autoincrement())
   paciente_id Int
   paciente    Paciente           @relation(fields: [paciente_id], references: [id])
+  reserva_id  Int?
+  reserva     Reserva?           @relation(fields: [reserva_id], references: [id])
   tipo        TipoNotificacion
   canal       CanalNotificacion
   fecha_envio DateTime           @default(now())
+  titulo      String
+  descripcion String
+  leida       Boolean            @default(false)
   estado      EstadoNotificacion @default(PENDIENTE)
 }
