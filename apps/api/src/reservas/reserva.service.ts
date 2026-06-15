@@ -628,4 +628,55 @@ export class ReservaService {
     return this.crearReservaFija(usuario.paciente.id, turnoInicialId, fechasString);
   }
 
+
+  async marcarAsistencia(reservaId: number, asistio: boolean) {
+    const reserva = await this.prisma.reserva.findUnique({
+      where: { id: reservaId },
+      include: { turno: true },
+    })
+  
+    if (!reserva) {
+      throw new NotFoundException('La reserva no existe')
+    }
+  
+    if (reserva.estado !== EstadoReserva.CONFIRMADA) {
+      throw new BadRequestException('Solo se puede marcar asistencia sobre reservas confirmadas')
+    }
+  
+    // Regla HU: no se puede marcar antes de los 30 min previos al inicio.
+    // (Retroactivo SÍ se permite, no hay cota superior.)
+    const inicioTurno = this.buildTurnoDateTimeUTC(reserva.turno.fecha, reserva.turno.hora_inicio)
+    const treintaMinAntes = new Date(inicioTurno.getTime() - 30 * 60 * 1000)
+    const ahora = new Date()
+  
+    if (ahora < treintaMinAntes) {
+      throw new BadRequestException('El turno aún no está habilitado para marcar asistencia')
+    }
+  
+    const nuevoEstado = asistio ? EstadoReserva.ASISTIO : EstadoReserva.AUSENTE
+  
+    await this.prisma.reserva.update({
+      where: { id: reservaId },
+      data: { estado: nuevoEstado },
+    })
+  
+    return {
+      message: asistio ? 'Asistencia registrada' : 'Inasistencia registrada',
+    }
+  }
+
+
+  async listarPorTurno(turnoId: number) {
+    return this.prisma.reserva.findMany({
+      where: {
+        turno_id: turnoId,
+        estado: { in: [EstadoReserva.CONFIRMADA, EstadoReserva.ASISTIO, EstadoReserva.AUSENTE] },
+      },
+      include: {
+        paciente: { include: { usuario: true } },
+        turno: true,
+      },
+    })
+  }
+
 }

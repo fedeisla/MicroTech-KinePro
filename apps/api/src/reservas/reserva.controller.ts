@@ -1,6 +1,6 @@
-import { BadRequestException, Controller, Get, Post, Body, Patch, Param, Delete, Req, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Body, Patch, Param, Delete, Req, Query, ParseIntPipe } from '@nestjs/common';
 
-import { CreateReservaDto } from './dto/create-reserva.dto';
+import { CreateReservaDto, MarcarAsistenciaDto } from './dto/create-reserva.dto';
 import { CreateReservaPresencialDto } from './dto/create-reserva-presencial.dto';
 import { CreateReservaFijaPresencialDto } from './dto/create-reserva-fija-presencial.dto';
 import { UpdateReservaDto } from './dto/update-reserva.dto';
@@ -93,5 +93,20 @@ export class ReservaController {
   remove(@Req() req, @Param('id') id: string) {
     const pacienteId = req.user.pacienteId;
     return this.reservaService.remove(+id, pacienteId);
+  }
+
+  @Roles('ADMIN', 'OWNER')
+  @Get('por-turno/:turnoId')
+  listarPorTurno(@Param('turnoId', ParseIntPipe) turnoId: number) {
+    return this.reservaService.listarPorTurno(turnoId)
+  }
+  
+  @Roles('ADMIN', 'OWNER')
+  @Patch(':id/asistencia')
+  marcarAsistencia(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: MarcarAsistenciaDto,
+  ) {
+    return this.reservaService.marcarAsistencia(id, dto.asistio)
   }
 }

@@ -7,3 +7,10 @@ export class CreateReservaDto {
   turno_id!: number;
 
 }
+
+import { IsBoolean } from 'class-validator'
+
+export class MarcarAsistenciaDto {
+  @IsBoolean({ message: 'asistio debe ser true o false' })
+  asistio!: boolean
+}

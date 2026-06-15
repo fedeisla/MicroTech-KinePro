@@ -13,6 +13,7 @@ import { fechasMismoDiaSemana, parseFechaLocal } from '@/lib/fechas'
 import { ChevronDown } from 'lucide-react'
 import type { TurnoResumen, TurnoDetalle, EstadoTurno } from '@/types/turno'
 import { getTurnoById } from '@/services/turnosService'
+import { marcarAsistencia } from '@/services/asistenciaService'
 
 interface TurnoGridProps {
   fecha: string | null
@@ -188,6 +189,34 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
   const [cancelarReservaId, setCancelarReservaId] = useState<number | null>(null)
   const [cancelando, setCancelando] = useState(false)
 
+  const [procesandoAsistencia, setProcesandoAsistencia] = useState<number | null>(null)
+
+  // Habilitado SOLO desde 30 min antes del inicio (sin tope superior). Idéntico a la regla del back.
+  function habilitadoParaMarcar(): boolean {
+    if (!fecha || !detalle.horario) return false
+    const [h, m] = detalle.horario.split(':').map(Number)
+    const inicio = new Date(`${fecha}T00:00:00`)
+    inicio.setHours(h, m, 0, 0)
+    const treintaAntes = new Date(inicio.getTime() - 30 * 60 * 1000)
+    return new Date() >= treintaAntes
+  }
+
+  async function handleMarcar(reservaId: number, asistio: boolean) {
+    setProcesandoAsistencia(reservaId)
+    try {
+      const res = await marcarAsistencia(reservaId, asistio)
+      toast.success(res.message)
+      if (onReservaCreada) await onReservaCreada()
+    } catch (e: any) {
+      toast.error('Error', { description: e.message })
+    } finally {
+      setProcesandoAsistencia(null)
+    }
+  }
+
+  const puedeMarcar = habilitadoParaMarcar()
+
+
   if (detalle.inscriptos.length === 0 && !esAdmin) {
     return <p className="text-xs text-neutral-gray">Sin inscriptos en este turno.</p>
   }
@@ -257,32 +286,65 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
       <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-gray mb-3">
         Inscriptos — {detalle.reservasActuales} / {detalle.capacidad}
       </p>
-      {detalle.inscriptos.map((p) => (
-        <div key={p.id} className="rounded-lg border border-neutral-bg bg-white px-3 py-2 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm font-medium text-gray-800">
-            {p.nombre} {p.apellido}
-            {p.email ? <span className="text-slate-500 font-normal"> ({p.email})</span> : null}
-          </span>
-          {esAdmin && p.estado !== 'CANCELADA' && (
-            <div className="flex gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setReprogramarReservaId(p.id)}
-                className="px-2.5 py-1 text-xs font-semibold rounded-md border border-kineblue/30 text-kineblue hover:bg-kineblue/5"
-              >
-                Reprogramar
-              </button>
-              <button
-                type="button"
-                onClick={() => setCancelarReservaId(p.id)}
-                className="px-2.5 py-1 text-xs font-semibold rounded-md border border-red-200 text-red-700 hover:bg-red-50"
-              >
-                Cancelar turno
-              </button>
+      {detalle.inscriptos.map((p) => {
+        const yaMarcado = p.estado === 'ASISTIO' || p.estado === 'AUSENTE'
+        return (
+          <div key={p.id} className="rounded-lg border border-neutral-bg bg-white px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-medium text-gray-800">
+                {p.nombre} {p.apellido}
+                {p.email ? <span className="text-slate-500 font-normal"> ({p.email})</span> : null}
+              </span>
+              {p.estado === 'ASISTIO' && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">Asistió</span>
+              )}
+              {p.estado === 'AUSENTE' && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">No asistió</span>
+              )}
             </div>
-          )}
-        </div>
-      ))}
+            {esAdmin && p.estado !== 'CANCELADA' && (
+              <div className="flex gap-2 shrink-0 flex-wrap">
+                {!yaMarcado && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={!puedeMarcar || procesandoAsistencia === p.id}
+                      onClick={() => handleMarcar(p.id, true)}
+                      className="px-2.5 py-1 text-xs font-semibold rounded-md border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={!puedeMarcar ? 'Disponible desde 30 minutos antes del inicio' : ''}
+                    >
+                      Marcar asistencia
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!puedeMarcar || procesandoAsistencia === p.id}
+                      onClick={() => handleMarcar(p.id, false)}
+                      className="px-2.5 py-1 text-xs font-semibold rounded-md border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={!puedeMarcar ? 'Disponible desde 30 minutos antes del inicio' : ''}
+                    >
+                      Marcar inasistencia
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setReprogramarReservaId(p.id)}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-md border border-kineblue/30 text-kineblue hover:bg-kineblue/5"
+                >
+                  Reprogramar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCancelarReservaId(p.id)}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-md border border-red-200 text-red-700 hover:bg-red-50"
+                >
+                  Cancelar turno
+                </button>
+              </div>
+            )}
+          </div>
+        )
+      })}
 
       <ReprogramarReservaModal
         abierto={reprogramarReservaId !== null}
