@@ -89,3 +89,13 @@ export async function reprogramarReservaPresencial(
     body: JSON.stringify({ turno_id }),
   })
 }
+
+export async function registrarAsistenciaReserva(
+  reservaId: number,
+  estado: 'ASISTIO' | 'AUSENTE',
+): Promise<{ message: string; ausenciasMensuales: number; penalizacionAplicada: boolean }> {
+  return apiFetch(`/reserva/asistencia/${reservaId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ estado }),
+  })
+}

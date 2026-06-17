@@ -81,10 +81,27 @@ export class ReservaService {
   }
 
   // CORRECCIÓN 2: no se puede reservar un turno que ya comenzó o ya pasó
-  const turnoFechaHora = this.buildTurnoDateTimeUTC(turno.fecha, turno.hora_inicio);
-  if (turnoFechaHora.getTime() <= Date.now()) {
-    throw new BadRequestException('No se puede reservar un turno en el pasado o que ya comenzó');
-  }
+    const turnoFechaHora = this.buildTurnoDateTimeUTC(turno.fecha, turno.hora_inicio);
+
+    // Comparar usando la hora actual en Buenos Aires para evitar errores por TZ del servidor
+    const partsNow = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(new Date());
+    const mapNow = new Map(partsNow.map((p) => [p.type, p.value]));
+    const ahoraBA = new Date(Date.UTC(
+      Number(mapNow.get('year')),
+      Number(mapNow.get('month')) - 1,
+      Number(mapNow.get('day')),
+      Number(mapNow.get('hour')),
+      Number(mapNow.get('minute')),
+      0,
+      0,
+    ));
+
+    if (turnoFechaHora.getTime() <= ahoraBA.getTime()) {
+      throw new BadRequestException('No se puede reservar un turno en el pasado o que ya comenzó');
+    }
 
     // 2. Validamos la actividad
     const actividad = await this.prisma.tipoActividad.findUnique({
@@ -264,6 +281,119 @@ export class ReservaService {
 
     // Caso 3: cambio de turno + estado: no soportado (evita ambigüedad)
     throw new BadRequestException('Operación no soportada');
+  }
+
+  async registrarAsistencia(reservaId: number, estado: EstadoReserva) {
+    if (estado !== EstadoReserva.ASISTIO && estado !== EstadoReserva.AUSENTE) {
+      throw new BadRequestException('El estado debe ser ASISTIO o AUSENTE');
+    }
+
+    const reserva = await this.prisma.reserva.findUnique({
+      where: { id: reservaId },
+      include: {
+        turno: true,
+        paciente: { include: { usuario: true } },
+      },
+    });
+
+    if (!reserva) {
+      throw new NotFoundException('La reserva no existe');
+    }
+
+    if (reserva.estado !== EstadoReserva.CONFIRMADA) {
+      throw new BadRequestException('Solo se puede registrar la asistencia para reservas confirmadas');
+    }
+
+    const turnoDateTime = this.buildTurnoDateTimeUTC(reserva.turno.fecha, reserva.turno.hora_inicio);
+
+    // Calcular 'ahora' en la zona de Buenos Aires para evitar desfasajes por TZ
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(new Date());
+    const map = new Map(parts.map((p) => [p.type, p.value]));
+    const ahoraBA = new Date(Date.UTC(
+      Number(map.get('year')),
+      Number(map.get('month')) - 1,
+      Number(map.get('day')),
+      Number(map.get('hour')),
+      Number(map.get('minute')),
+      0,
+      0,
+    ));
+
+    const minutosParaInicio = (turnoDateTime.getTime() - ahoraBA.getTime()) / (1000 * 60);
+
+    if (minutosParaInicio > 30) {
+      throw new BadRequestException('El control de asistencia al turno se habilitará 30 minutos antes de su horario de inicio');
+    }
+
+    // Actualizar la reserva con el estado de asistencia
+    const reservaActualizada = await this.prisma.reserva.update({
+      where: { id: reservaId },
+      data: { estado },
+    });
+
+    // Si es ausencia, manejar la penalización
+    if (estado === EstadoReserva.AUSENTE && reserva.paciente && reserva.paciente.usuario) {
+      const primerDiaMes = new Date(Date.UTC(ahoraBA.getUTCFullYear(), ahoraBA.getUTCMonth(), 1));
+      const primerDiaMesSiguiente = new Date(Date.UTC(ahoraBA.getUTCFullYear(), ahoraBA.getUTCMonth() + 1, 1));
+
+      // Contar ausencias previas en el mes actual (sin incluir esta actual)
+      const ausenciasPrevias = await this.prisma.reserva.count({
+        where: {
+          paciente_id: reserva.paciente_id,
+          estado: EstadoReserva.AUSENTE,
+          turno: {
+            fecha: {
+              gte: primerDiaMes,
+              lt: primerDiaMesSiguiente,
+            },
+          },
+          // Excluir la reserva actual que ya fue actualizada
+          NOT: {
+            id: reservaId,
+          },
+        },
+      });
+
+      // ausenciasPrevias es la cantidad ANTES de esta ausencia actual
+      // Después de esta, serán ausenciasPrevias + 1
+      const ausenciasTotales = ausenciasPrevias + 1;
+      
+      // Actualizar el campo ausenciasMesActual
+      await this.prisma.paciente.update({
+        where: { id: reserva.paciente_id },
+        data: { ausenciasMesActual: ausenciasTotales },
+      });
+
+      // Enviar notificación SOLO si es la segunda ausencia del mes
+      if (ausenciasPrevias === 1) {
+        const mensaje = 'Alcanzaste el límite de ausencias mensuales y perdiste la posibilidad de recibir un descuento en la reserva de turnos fijos para el próximo mes';
+        await this.notificacionesService.crearNotificacion({
+          pacienteId: reserva.paciente_id,
+          reservaId: reservaId,
+          titulo: 'Límite de ausencias alcanzado',
+          descripcion: mensaje,
+          tipo: 'INFORMATIVA',
+          canal: 'EMAIL',
+          enviarEmail: true,
+          email: reserva.paciente.usuario.email,
+        });
+      }
+
+      return {
+        message: 'Ausencia registrada',
+        ausenciasMensuales: ausenciasTotales,
+        penalizacionAplicada: ausenciasPrevias === 1,
+      };
+    }
+
+    return {
+      message: 'Asistencia registrada',
+      ausenciasMensuales: 0,
+      penalizacionAplicada: false,
+    };
   }
 
   async reprogramarPresencial(reservaId: number, nuevoTurnoId: number) {

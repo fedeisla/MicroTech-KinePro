@@ -115,17 +115,18 @@ model Usuario {
 }
 
 model Paciente {
-  id               Int       @id @default(autoincrement())
-  usuario_id       Int       @unique
-  usuario          Usuario   @relation(fields: [usuario_id], references: [id])
-  tipo_plan        TipoPlan
-  fecha_nacimiento DateTime  @db.Date
+  id                    Int       @id @default(autoincrement())
+  usuario_id            Int       @unique
+  usuario               Usuario   @relation(fields: [usuario_id], references: [id])
+  tipo_plan             TipoPlan
+  fecha_nacimiento      DateTime  @db.Date
+  ausenciasMesActual    Int       @default(0)
 
   // Relaciones inversas (Un paciente tiene...)
-  reservas         Reserva[]
-  lista_espera     ListaEspera[]
-  descuentos       Descuento[]
-  notificaciones   Notificacion[]
+  reservas              Reserva[]
+  lista_espera          ListaEspera[]
+  descuentos            Descuento[]
+  notificaciones        Notificacion[]
 }
 
 model Kinesiologo {

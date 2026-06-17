@@ -165,7 +165,7 @@ export class TurnosService {
           include: {
             paciente: {
               include: {
-                usuario: { select: { nombre: true, apellido: true, email: true } },
+                usuario: { select: { nombre: true, apellido: true, email: true, dni: true } },
               },
             },
             pagos: { where: { estado: 'COMPLETADO' }, select: { id: true } },
@@ -178,9 +178,15 @@ export class TurnosService {
       throw new NotFoundException('El turno no existe');
     }
 
+    // Normalizar la fecha a YYYY-MM-DD
+    const y = turno.fecha.getUTCFullYear();
+    const m = String(turno.fecha.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(turno.fecha.getUTCDate()).padStart(2, '0');
+    const fechaStr = `${y}-${m}-${d}`;
+
     return {
       id: turno.id,
-      fecha: turno.fecha,
+      fecha: fechaStr,
       hora_inicio: turno.hora_inicio,
       actividad: turno.tipoActividad.nombre,
       cantidad_reservas: turno.cantidad_inscriptos,
@@ -192,6 +198,7 @@ export class TurnosService {
         nombre: r.paciente.usuario.nombre,
         apellido: r.paciente.usuario.apellido,
         email: r.paciente.usuario.email,
+        dni: r.paciente.usuario.dni,
         estado: r.estado,
         pagado: r.pagos.length > 0,
       })),

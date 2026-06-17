@@ -1,9 +1,10 @@
-import { BadRequestException, Controller, Get, Post, Body, Patch, Param, Delete, Req, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Body, Patch, Param, Delete, Req, Query, ParseIntPipe } from '@nestjs/common';
 
 import { CreateReservaDto } from './dto/create-reserva.dto';
 import { CreateReservaPresencialDto } from './dto/create-reserva-presencial.dto';
 import { CreateReservaFijaPresencialDto } from './dto/create-reserva-fija-presencial.dto';
 import { UpdateReservaDto } from './dto/update-reserva.dto';
+import { RegistrarAsistenciaDto } from './dto/registrar-asistencia.dto';
 import { ReservaService } from './reserva.service';
 import { EstadoReserva } from '@prisma/client';
 import { Roles } from '@/auth/roles.decorator';
@@ -86,6 +87,12 @@ export class ReservaController {
   update(@Req() req, @Param('id') id: string, @Body() updateReservaDto: UpdateReservaDto) {
     const pacienteId =req.user.pacienteId;
     return this.reservaService.update(+id, pacienteId, updateReservaDto);
+  }
+
+  @Roles('OWNER', 'ADMIN')
+  @Patch('asistencia/:id')
+  registrarAsistencia(@Param('id', ParseIntPipe) id: number, @Body() dto: RegistrarAsistenciaDto) {
+    return this.reservaService.registrarAsistencia(id, dto.estado);
   }
 
   @Roles('PACIENTE')

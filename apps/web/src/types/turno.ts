@@ -6,6 +6,7 @@ export interface Inscripto {
   nombre: string
   apellido: string
   email: string
+  dni?: string
   estado: EstadoReserva
   pagado: boolean
 }
@@ -22,6 +23,7 @@ export interface TurnoResumen {
 
 export interface TurnoDetalle {
   id: number
+  fecha: string
   horario: string
   actividad: string
   capacidad: number

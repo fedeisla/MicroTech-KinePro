@@ -77,6 +77,7 @@ export async function getTurnoById(id: number): Promise<TurnoDetalle> {
   const data = await apiFetch<any>(`/turnos/${id}`)
   return {
     id: data.id,
+    fecha: data.fecha,
     horario: extractHora(data.hora_inicio),
     actividad: data.actividad,
     capacidad: data.capacidad,
@@ -87,6 +88,7 @@ export async function getTurnoById(id: number): Promise<TurnoDetalle> {
       nombre: i.nombre,
       apellido: i.apellido,
       email: i.email ?? '',
+      dni: i.dni ?? '',
       estado: i.estado,
       pagado: i.pagado ?? false,
     })),
