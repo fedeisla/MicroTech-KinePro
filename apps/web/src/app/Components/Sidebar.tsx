@@ -17,6 +17,7 @@ const LINKS: LinkConfig[] = [
   { href: '/Usuarios',      label: 'Usuarios',       rolesPermitidos: ['ADMIN', 'OWNER'] },
   { href: '/actividades',   label: 'Actividades',    rolesPermitidos: ['ADMIN', 'OWNER'] },
   { href: '/turnos',        label: 'Turnos',         rolesPermitidos: ['ADMIN', 'OWNER'] },
+  { href: '/estadisticas',  label: 'Estadísticas',   rolesPermitidos: ['OWNER'] },
   { href: '/mis-turnos/pendientes', label: 'Ver turnos pendientes',  rolesPermitidos: ['PACIENTE'] },
   { href: '/mis-turnos/pasados', label: 'Ver historial de turnos',  rolesPermitidos: ['PACIENTE'] },
   { href: '/#ubicacion',    label: 'Ubicación',   rolesPermitidos: 'todos', soloNoAutenticadosYPacientes: true },

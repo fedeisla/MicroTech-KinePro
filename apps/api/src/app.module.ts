@@ -13,6 +13,7 @@ import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 import { MailService } from './mail/mail.service';
 import { MailModule } from './mail/mail.module';
+import { EstadisticasModule } from './estadisticas/estadisticas.module';
 
 @Module({
   imports: [
@@ -25,7 +26,8 @@ import { MailModule } from './mail/mail.module';
     TurnosModule,
     ReservaModule,
     PagosModule,
-    MailModule
+    MailModule,
+    EstadisticasModule,
   ],
   providers: [
     {

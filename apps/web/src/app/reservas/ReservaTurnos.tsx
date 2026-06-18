@@ -129,7 +129,7 @@ export default function ReservaTurnos() {
   };
 
   const handleConfirmarTurno = async () => {
-    if (!diaPrincipal || !actividadSeleccionada) return; 
+    if (!diaPrincipal || !actividadSeleccionada || !rangoSeleccionado) return; 
     try {
       const inputReserva: CrearReservaInput = {
         turno_id: actividadSeleccionada.id,
