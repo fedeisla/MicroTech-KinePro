@@ -1,4 +1,4 @@
-import { Controller, Post, Body } from '@nestjs/common'
+import { Controller, Post, Body, Param, ParseIntPipe } from '@nestjs/common'
 import { PagosService } from './pagos.service'
 import { CrearPagoDto } from './pagos.dto'
 import { Roles } from '@/auth/roles.decorator'
@@ -11,5 +11,30 @@ export class PagosController {
   @Post()
   registrar(@Body() dto: CrearPagoDto) {
     return this.pagosService.registrar(dto)
+  }
+
+  
+  @Roles('PACIENTE')
+  @Post('mercadopago/preference/:reservaId')
+  crearPreferenceMP(@Param('reservaId', ParseIntPipe) reservaId: number) {
+    return this.pagosService.crearPreferenceMP(reservaId)
+  }
+
+  @Roles('PACIENTE')
+  @Post('mercadopago/confirmar/:paymentId')
+  confirmarPagoMP(@Param('paymentId') paymentId: string) {
+    return this.pagosService.confirmarPagoMP(paymentId)
+  }
+
+  @Roles('PACIENTE')
+  @Post('mercadopago/cancelar/:reservaId')
+  cancelar(@Param('reservaId', ParseIntPipe) reservaId: number) {
+    return this.pagosService.cancelarReservaPorPagoCancelado(reservaId)
+  }
+
+  @Roles('PACIENTE')
+  @Post('mercadopago/verificar/:reservaId')
+  verificarPagoMP(@Param('reservaId', ParseIntPipe) reservaId: number) {
+    return this.pagosService.verificarPagoMP(reservaId)
   }
 }

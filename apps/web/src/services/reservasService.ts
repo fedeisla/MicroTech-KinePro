@@ -29,7 +29,7 @@ export async function crearReservaFija(turnoBaseId: number, fechasMensuales: Dat
     });
 }
 
-export async function crearReserva(input: CrearReservaInput): Promise<{ message: string }> {
+export async function crearReserva(input: CrearReservaInput): Promise<{ message: string; reservaId: number }> {
   return apiFetch('/reserva/crear', {
     method: 'POST',
     body: JSON.stringify(input),
