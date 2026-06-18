@@ -135,7 +135,7 @@ export class ReservaService {
       await this.prisma.$transaction(async (tx) => {
         nuevaReserva = await tx.reserva.create({
           data: {
-            estado: 'CONFIRMADA',
+            estado: 'PENDIENTE',
             turno: {
               connect: { id: createReservaDto.turno_id }
             },
@@ -193,7 +193,8 @@ export class ReservaService {
         });
       }
       return {
-        message: '¡Turno reservado con éxito!',
+        message: 'Reserva pendiente de pago',
+        reservaId: nuevaReserva!.id,
       };
 
     } catch (error) {

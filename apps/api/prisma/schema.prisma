@@ -204,6 +204,8 @@ model Pago {
   estado      EstadoPago @default(PENDIENTE)
   fecha_pago  DateTime?
   comprobante String?    // Guardará la URL o ruta del comprobante
+  mercadopago_preference_id String?
+  mercadopago_payment_id    String?
 }
 
 model ListaEspera {
