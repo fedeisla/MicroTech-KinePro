@@ -6,6 +6,7 @@ import { getEstadisticas } from '@/services/estadisticasService'
 import type { EstadisticasResponse } from '@/types/estadisticas'
 import SeccionAcordeon from './SeccionAcordeon'
 import GraficoBarras from './GraficoBarras'
+import GraficoBarraAsistencia from './GraficoBarraAsistencia'
 import GraficoComparacion from './GraficoComparacion'
 
 const METODO_LABELS: Record<string, string> = {
@@ -186,6 +187,52 @@ export default function EstadisticasPanel() {
                 parte={datos!.cancelaciones.total}
                 total={datos!.totalReservas}
               />
+            </div>
+          )}
+        </SeccionAcordeon>
+
+        <SeccionAcordeon titulo="Asistencia">
+          {!consultado ? (
+            <p className="py-2 text-center text-sm text-slate-400">
+              Seleccioná un rango de fechas y presioná Ver
+            </p>
+          ) : datos!.asistencia.totalTurnos === 0 ? (
+            <MensajeVacio />
+          ) : (
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="rounded-lg bg-slate-50 px-4 py-3 text-center">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Inscriptos
+                  </p>
+                  <p className="text-2xl font-bold text-kine-blue">
+                    {datos!.asistencia.totalInscriptos}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-progreen/10 px-4 py-3 text-center">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Presentes
+                  </p>
+                  <p className="text-2xl font-bold text-progreen-deep">
+                    {datos!.asistencia.presentes}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-red-50 px-4 py-3 text-center">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Ausentes
+                  </p>
+                  <p className="text-2xl font-bold text-red-700">
+                    {datos!.asistencia.ausentes}
+                  </p>
+                </div>
+              </div>
+              {datos!.asistencia.totalInscriptos > 0 && (
+                <GraficoBarraAsistencia
+                  presentes={datos!.asistencia.presentes}
+                  ausentes={datos!.asistencia.ausentes}
+                  total={datos!.asistencia.totalInscriptos}
+                />
+              )}
             </div>
           )}
         </SeccionAcordeon>

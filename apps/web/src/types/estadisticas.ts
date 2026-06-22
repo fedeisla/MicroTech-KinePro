@@ -8,4 +8,10 @@ export type EstadisticasResponse = {
   ingresos: {
     items: { metodo: string; monto: number }[]
   }
+  asistencia: {
+    totalTurnos: number
+    totalInscriptos: number
+    presentes: number
+    ausentes: number
+  }
 }

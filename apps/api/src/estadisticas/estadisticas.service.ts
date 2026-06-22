@@ -118,16 +118,48 @@ export class EstadisticasService {
     return total;
   }
 
+  async obtenerAsistencia(desde: string, hasta: string) {
+    const { fechaDesde, fechaHastaFin } = this.validarRango(desde, hasta);
+
+    const filtroFechaTurno = { fecha: { gte: fechaDesde, lte: fechaHastaFin } };
+    const filtroReservaEnPeriodo = { turno: filtroFechaTurno };
+
+    const totalTurnos = await this.prisma.turno.count({
+      where: filtroFechaTurno,
+    });
+
+    if (totalTurnos === 0) {
+      return { totalTurnos: 0, totalInscriptos: 0, presentes: 0, ausentes: 0 };
+    }
+
+    const [totalInscriptos, ausentes] = await Promise.all([
+      this.prisma.reserva.count({
+        where: {
+          ...filtroReservaEnPeriodo,
+          estado: { not: EstadoReserva.CANCELADA },
+        },
+      }),
+      this.prisma.reserva.count({
+        where: { ...filtroReservaEnPeriodo, estado: EstadoReserva.AUSENTE },
+      }),
+    ]);
+
+    const presentes = totalInscriptos - ausentes;
+
+    return { totalTurnos, totalInscriptos, presentes, ausentes };
+  }
+
   async obtenerTodas(desde: string, hasta: string) {
-    const [cancelaciones, reprogramaciones, demandaActividad, ingresos, totalReservas] =
+    const [cancelaciones, reprogramaciones, demandaActividad, ingresos, totalReservas, asistencia] =
       await Promise.all([
         this.obtenerCancelaciones(desde, hasta),
         this.obtenerReprogramaciones(desde, hasta),
         this.obtenerDemandaActividad(desde, hasta),
         this.obtenerIngresos(desde, hasta),
         this.obtenerTotalReservas(desde, hasta),
+        this.obtenerAsistencia(desde, hasta),
       ]);
 
-    return { totalReservas, cancelaciones, reprogramaciones, demandaActividad, ingresos };
+    return { totalReservas, cancelaciones, reprogramaciones, demandaActividad, ingresos, asistencia };
   }
 }
