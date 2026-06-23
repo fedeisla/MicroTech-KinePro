@@ -115,7 +115,7 @@ export class ReservaService {
     const tieneReserva = await this.prisma.reserva.findFirst({
       where: {
         paciente_id: pacienteId,
-        estado: EstadoReserva.CONFIRMADA, 
+        estado: { in: [EstadoReserva.CONFIRMADA, EstadoReserva.PENDIENTE] }, 
         turno: {
           fecha: turno.fecha,
           hora_inicio: turno.hora_inicio,

@@ -139,13 +139,14 @@ export default function ReservaTurnos() {
 
   const handleConfirmarTurno = async () => {
     if (!diaPrincipal || !actividadSeleccionada || !rangoSeleccionado) return;
-    try {
-      const inputReserva: CrearReservaInput = {
-        turno_id: actividadSeleccionada.id,
-      };
 
-      if (esAdmin) {
-        // Flujo admin: reserva presencial, sin pago MP
+    const inputReserva: CrearReservaInput = {
+      turno_id: actividadSeleccionada.id,
+    };
+
+    // Flujo admin: reserva presencial, sin pago MP
+    if (esAdmin) {
+      try {
         if (!adminEmail) throw new Error('Ingrese el email del paciente');
         await crearReservaPresencial(adminEmail, inputReserva.turno_id);
 
@@ -155,89 +156,88 @@ export default function ReservaTurnos() {
           description: `${actividadSeleccionada.nombre} el ${diaFormateado}/${mesFormateado} de ${rangoSeleccionado.desde} a ${rangoSeleccionado.hasta} hs.`,
           duration: 4000,
         });
-        return;
+      } catch (error: any) {
+        toast.error(error.message || 'No se pudo crear la reserva', { duration: 5000 });
       }
-
-      // Flujo paciente: reservar PENDIENTE + crear preference MP + redirigir
-      toast.info('Procesando reserva…', { duration: 2000 });
-      const resReserva = await crearReserva(inputReserva);
-      const pref = await crearPreferenceMP(resReserva.reservaId);
-
-      if (!pref.init_point) {
-        throw new Error('No se pudo iniciar el pago');
-      }
-
-      // Abrir MP en una NUEVA pestaña
-      const mpWindow = window.open(pref.init_point, '_blank');
-      if (!mpWindow) {
-        throw new Error('El navegador bloqueó la ventana. Habilitá pop-ups y reintentá.');
-      }
-
-      // Mostrar overlay "Esperando…" en la pestaña actual
-      setEsperandoPago(true);
-      setPagoConfirmado(false);
-
-      // Polling cada 3 seg para ver si MP confirmó el pago
-      // const reservaIdEnEspera = resReserva.reservaId;
-      // const intervalo = setInterval(async () => {
-      //   try {
-      //     const r = await verificarPagoMP(reservaIdEnEspera);
-      //     if (r.status === 'ok') {
-      //       clearInterval(intervalo);
-      //       setPagoConfirmado(true);
-      //       toast.success('¡Pago confirmado por MercadoPago!');
-      //     } else if (r.status === 'cancelado') {
-      //       clearInterval(intervalo);
-      //       setEsperandoPago(false);
-      //       toast.error('La reserva fue cancelada');
-      //     }
-      //   } catch (e) {
-      //     // Silencioso, el polling sigue
-      //   }
-      // }, 3000);
-
-      // Timeout de 5 minutos por si nunca llegan a pagar
-      // setTimeout(() => {
-      //   clearInterval(intervalo);
-      //   if (!pagoConfirmado) {
-      //     setEsperandoPago(false);
-      //     toast.error('Tiempo agotado. Si pagaste, refrescá tus turnos.');
-      //   }
-      // }, 5 * 60 * 1000);
-
-      reservaIdEsperaRef.current = resReserva.reservaId;
-      intervaloRef.current = setInterval(async () => {
-        try {
-          const r = await verificarPagoMP(resReserva.reservaId);
-          if (r.status === 'ok') {
-            if (intervaloRef.current) clearInterval(intervaloRef.current);
-            if (timeoutRef.current) clearTimeout(timeoutRef.current);
-            setPagoConfirmado(true);
-            toast.success('¡Pago confirmado por MercadoPago!');
-          } else if (r.status === 'cancelado') {
-            if (intervaloRef.current) clearInterval(intervaloRef.current);
-            if (timeoutRef.current) clearTimeout(timeoutRef.current);
-            setEsperandoPago(false);
-            toast.error('La reserva fue cancelada');
-          }
-        } catch (e) {
-          // Silencioso, el polling sigue
-        }
-      }, 3000);
-
-      timeoutRef.current = setTimeout(() => {
-        if (intervaloRef.current) clearInterval(intervaloRef.current);
-        if (!pagoConfirmado) {
-          setEsperandoPago(false);
-          toast.error('Tiempo agotado. Si pagaste, refrescá tus turnos.');
-        }
-      }, 5 * 60 * 1000);
-    } catch (error: any) {
-      toast.error('No pudimos iniciar el pago', {
-        description: error.message || 'No se pudo conectar con MercadoPago, intente nuevamente',
-        duration: 5000,
-      });
+      return;
     }
+
+    // Flujo paciente: 2 fases con catches separados
+
+    // FASE 1: crear reserva
+    let resReserva;
+    try {
+      toast.info('Procesando reserva…', { duration: 2000 });
+      resReserva = await crearReserva(inputReserva);
+    } catch (reservaError: any) {
+      toast.error(reservaError.message || 'No se pudo crear la reserva', { duration: 5000 });
+      return;
+    }
+
+    // FASE 2: crear preference MP
+    let pref;
+    try {
+      pref = await crearPreferenceMP(resReserva.reservaId);
+    } catch (mpError) {
+      // MP falló: cancelar la reserva pendiente para liberar el cupo
+      await cancelarPagoMP(resReserva.reservaId).catch(() => {});
+      toast.error('No se pudo conectar con MercadoPago, intente nuevamente', { duration: 5000 });
+      return;
+    }
+
+    if (!pref.init_point) {
+      await cancelarPagoMP(resReserva.reservaId).catch(() => {});
+      toast.error('No se pudo conectar con MercadoPago, intente nuevamente', { duration: 5000 });
+      return;
+    }
+
+    // FASE 3: abrir MP y arrancar polling
+    const mpWindow = window.open(pref.init_point, '_blank');
+    if (!mpWindow) {
+      await cancelarPagoMP(resReserva.reservaId).catch(() => {});
+      toast.error('El navegador bloqueó la ventana. Habilitá pop-ups y reintentá.', { duration: 5000 });
+      return;
+    }
+
+    setEsperandoPago(true);
+    setPagoConfirmado(false);
+    reservaIdEsperaRef.current = resReserva.reservaId;
+
+    intervaloRef.current = setInterval(async () => {
+      try {
+        const r = await verificarPagoMP(resReserva.reservaId);
+        if (r.status === 'ok') {
+          console.log('LLEGÓ EL OK - cerrando modal');
+          if (intervaloRef.current) clearInterval(intervaloRef.current);
+          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          setEsperandoPago(false); //poner en true para ver el modal de pago confirmado
+          toast.success('¡Pago confirmado por MercadoPago!');
+        } else if (r.status === 'cancelado') {
+          if (intervaloRef.current) clearInterval(intervaloRef.current);
+          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          setEsperandoPago(false);
+          toast.error('La reserva fue cancelada');
+        } else if (r.status === 'rechazado') {
+          if (intervaloRef.current) clearInterval(intervaloRef.current);
+          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          setEsperandoPago(false);
+          toast.error('El pago fue rechazado por MercadoPago');
+        }
+      } catch (e) {
+        // silencioso, el polling sigue
+      }
+    }, 3000);
+
+    timeoutRef.current = setTimeout(async () => {
+      if (intervaloRef.current) clearInterval(intervaloRef.current);
+      if (!pagoConfirmado) {
+        // Liberar la reserva pendiente que nunca se pagó
+        await cancelarPagoMP(resReserva.reservaId).catch(() => {});
+        reservaIdEsperaRef.current = null;
+        setEsperandoPago(false);
+        toast.error('Tiempo agotado para realizar el pago. La reserva fue cancelada.', { duration: 5000 });
+      }
+    }, 5 * 60 * 1000);
   };
 
   const handleConfirmarReservaFija = async (fechasMensuales: Date[]) => {
@@ -273,7 +273,7 @@ export default function ReservaTurnos() {
     if (reservaIdEsperaRef.current) {
       try {
         await cancelarPagoMP(reservaIdEsperaRef.current);
-        toast.info('Reserva cancelada. Si ya pagaste, comunicate con el centro.');
+        toast.info('Reserva cancelada.');
       } catch (e) {
         // silencioso
       }
@@ -350,39 +350,23 @@ export default function ReservaTurnos() {
 
       </div>
           {esperandoPago && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-        <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-8 text-center">
-          {!pagoConfirmado ? (
-            <>
-              <div className="mx-auto mb-4 w-12 h-12 border-4 border-kine-blue border-t-transparent rounded-full animate-spin" />
-              <h2 className="text-xl font-bold text-slate-800 mb-2">Esperando confirmación del pago…</h2>
-              <p className="text-slate-600 mb-4">
-                Completá el pago en la pestaña de MercadoPago que se abrió.
-              </p>
-              <p className="text-xs text-slate-400">No cierres esta ventana, vamos a confirmar tu reserva automáticamente.</p>
-              <button
-                onClick={handleCancelarPago}
-                className="mt-6 text-sm text-red-600 hover:underline"
-              >
-                Cancelar pago
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="mx-auto mb-4 w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-2xl">✓</div>
-              <h2 className="text-xl font-bold text-emerald-700 mb-2">¡Pago confirmado!</h2>
-              <p className="text-slate-600 mb-6">Tu turno quedó reservado y pagado.</p>
-              <button
-                onClick={() => { setEsperandoPago(false); setPagoConfirmado(false); }}
-                className="bg-kine-blue text-white px-4 py-2 rounded-lg"
-              >
-                Cerrar
-              </button>
-            </>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-8 text-center">
+                <div className="mx-auto mb-4 w-12 h-12 border-4 border-kine-blue border-t-transparent rounded-full animate-spin" />
+                <h2 className="text-xl font-bold text-slate-800 mb-2">Esperando confirmación del pago…</h2>
+                <p className="text-slate-600 mb-4">
+                  Completá el pago en la pestaña de MercadoPago que se abrió.
+                </p>
+                <p className="text-xs text-slate-400">No cierres esta ventana, vamos a confirmar tu reserva automáticamente.</p>
+                <button
+                  onClick={handleCancelarPago}
+                  className="mt-6 text-sm text-red-600 hover:underline"
+                >
+                  Cancelar pago
+                </button>
+              </div>
+            </div>
           )}
-        </div>
-      </div>
-    )}
     </div>
   );
 }

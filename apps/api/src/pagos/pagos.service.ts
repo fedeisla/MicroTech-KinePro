@@ -228,31 +228,58 @@ export class PagosService {
     })
   
     const approved = results?.results?.find((p: any) => p.status === 'approved')
-  
-    if (!approved) {
-      return { status: 'pendiente', message: 'Aún no se detectó pago aprobado' }
-    }
-  
-    await this.prisma.$transaction(async (tx) => {
-      const pago = await tx.pago.findFirst({
-        where: { reserva_id: reservaId, metodo: 'MERCADOPAGO' },
-      })
-      if (pago && pago.estado !== 'COMPLETADO') {
-        await tx.pago.update({
-          where: { id: pago.id },
-          data: {
-            estado: 'COMPLETADO',
-            fecha_pago: new Date(),
-            mercadopago_payment_id: String(approved.id),
-          },
+
+    if (approved) {
+      await this.prisma.$transaction(async (tx) => {
+        const pago = await tx.pago.findFirst({
+          where: { reserva_id: reservaId, metodo: 'MERCADOPAGO' },
         })
-      }
-      await tx.reserva.update({
-        where: { id: reservaId },
-        data: { estado: 'CONFIRMADA' },
+        if (pago && pago.estado !== 'COMPLETADO') {
+          await tx.pago.update({
+            where: { id: pago.id },
+            data: {
+              estado: 'COMPLETADO',
+              fecha_pago: new Date(),
+              mercadopago_payment_id: String(approved.id),
+            },
+          })
+        }
+        await tx.reserva.update({
+          where: { id: reservaId },
+          data: { estado: 'CONFIRMADA' },
+        })
       })
-    })
-  
-    return { status: 'ok', message: 'Pago confirmado' }
+      return { status: 'ok', message: 'Pago confirmado' }
+    }
+    
+    // Si no hay aprobado, ver si hay rechazado
+    const rejected = results?.results?.find((p: any) => p.status === 'rejected')
+    if (rejected) {
+      await this.prisma.$transaction(async (tx) => {
+        const pago = await tx.pago.findFirst({
+          where: { reserva_id: reservaId, metodo: 'MERCADOPAGO' },
+        })
+        if (pago && pago.estado !== 'RECHAZADO') {
+          await tx.pago.update({
+            where: { id: pago.id },
+            data: {
+              estado: 'RECHAZADO',
+              mercadopago_payment_id: String(rejected.id),
+            },
+          })
+        }
+        await tx.reserva.update({
+          where: { id: reservaId },
+          data: { estado: 'CANCELADA' },
+        })
+        await tx.turno.update({
+          where: { id: reserva.turno_id },
+          data: { cantidad_inscriptos: { decrement: 1 } },
+        })
+      })
+      return { status: 'rechazado', message: 'El pago fue rechazado por MercadoPago' }
+    }
+    
+    return { status: 'pendiente', message: 'Aún no se detectó pago aprobado' }
   }
 }
