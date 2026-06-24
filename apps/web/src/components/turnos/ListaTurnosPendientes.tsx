@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react'
 import type { TurnoPacientePendiente } from '@/types/turnoPaciente'
 import { cancelarReserva } from '@/services/reservasService'
 import ReprogramarReservaModal from '@/components/turnos/ReprogramarReservaModal'
+import InfoDialog, { tituloYMensajeDesdeApi } from '@/app/Components/InfoDialog'
 
 function formatFecha(fecha: string): string {
   const [year, month, day] = fecha.split('-')
@@ -20,6 +21,7 @@ interface ListaTurnosPendientesProps {
 export default function ListaTurnosPendientes({ turnos, onActualizado }: ListaTurnosPendientesProps) {
   const [confirmCancelId, setConfirmCancelId] = useState<number | null>(null)
   const [reprogramarReservaId, setReprogramarReservaId] = useState<number | null>(null)
+  const [errorDialog, setErrorDialog] = useState<{ titulo: string; mensaje: string } | null>(null)
 
   const reservaSeleccionada = useMemo(
     () => (reprogramarReservaId ? turnos.find((t) => t.id === reprogramarReservaId) ?? null : null),
@@ -41,7 +43,13 @@ export default function ListaTurnosPendientes({ turnos, onActualizado }: ListaTu
       setConfirmCancelId(null)
       onActualizado?.()
     } catch (e: any) {
-      toast.error('No se pudo cancelar el turno', { description: e.message })
+      const detalle = e?.message ?? 'Ocurrió un error inesperado. Intentá de nuevo.'
+      const parsed = tituloYMensajeDesdeApi(detalle)
+      setConfirmCancelId(null)
+      setErrorDialog({
+        titulo: parsed.mensaje ? parsed.titulo : 'No se pudo cancelar el turno',
+        mensaje: parsed.mensaje || detalle,
+      })
     }
   }
 
@@ -123,8 +131,18 @@ export default function ListaTurnosPendientes({ turnos, onActualizado }: ListaTu
         abierto={reprogramarReservaId !== null}
         reservaId={reprogramarReservaId}
         fechaActual={reservaSeleccionada?.fecha ?? null}
+        tipoActividadId={reservaSeleccionada?.tipoActividadId ?? null}
+        actividadNombre={reservaSeleccionada?.actividad ?? null}
         onClose={() => setReprogramarReservaId(null)}
         onReprogramado={() => onActualizado?.()}
+      />
+
+      <InfoDialog
+        abierto={errorDialog !== null}
+        variante="error"
+        titulo={errorDialog?.titulo ?? ''}
+        mensaje={errorDialog?.mensaje}
+        onCerrar={() => setErrorDialog(null)}
       />
     </>
   )

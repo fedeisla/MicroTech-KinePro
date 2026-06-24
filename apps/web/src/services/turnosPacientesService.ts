@@ -11,8 +11,8 @@ export function adaptarReservaADto(reservaApi: any): TurnoPacientePendiente {
     id: reservaApi.id,
     fecha: fechaLimpia,
     hora: horaLimpia,
-    actividad: reservaApi.turno.tipoActividad?.nombre || 'Sin actividad', 
-  
+    actividad: reservaApi.turno.tipoActividad?.nombre || 'Sin actividad',
+    tipoActividadId: reservaApi.turno.tipoActividad_id ?? reservaApi.turno.tipoActividad?.id,
   };
 }
 export function adaptarReservaPasasdoADto(reservaApi: any): TurnoPacientePasado {

@@ -53,6 +53,13 @@ export class ReservaService {
     return (turnoDT.getTime() - now.getTime()) / (1000 * 60 * 60);
   }
 
+  private assertPuedeCancelarReserva(reserva: { turno: { fecha: Date; hora_inicio: Date } }) {
+    const horas = this.horasHastaTurno(reserva);
+    if (horas < 48) {
+      throw new BadRequestException('No es posible cancelar porque restan menos de 48 horas para el inicio del turno');
+    }
+  }
+
   private async assertReservaEsDelPaciente(reservaId: number, pacienteId: number) {
     const reserva = await this.prisma.reserva.findUnique({
       where: { id: reservaId },
@@ -266,6 +273,7 @@ export class ReservaService {
       if (updateReservaDto.estado !== EstadoReserva.CANCELADA) {
         throw new BadRequestException('Cambio de estado no permitido');
       }
+      this.assertPuedeCancelarReserva(reservaActual);
       await this.cancelarReserva(id, reservaActual.turno_id);
       const ausencias = await this.prisma.reserva.count({
         where: { paciente_id: pacienteId, estado: EstadoReserva.AUSENTE },
@@ -410,6 +418,7 @@ export class ReservaService {
     if (reserva.estado === EstadoReserva.CANCELADA) {
       return { message: 'Turno cancelado' };
     }
+    this.assertPuedeCancelarReserva(reserva);
     try {
       await this.cancelarReserva(reservaId, reserva.turno_id);
     } catch (error) {
@@ -446,7 +455,7 @@ export class ReservaService {
 
   private async ejecutarReprogramacion(
     reservaId: number,
-    reservaActual: { id: number; paciente_id: number; turno_id: number; cant_reprogramaciones: number; estado: EstadoReserva; turno: { fecha: Date; hora_inicio: Date } },
+    reservaActual: { id: number; paciente_id: number; turno_id: number; cant_reprogramaciones: number; estado: EstadoReserva; turno: { fecha: Date; hora_inicio: Date; tipoActividad_id: number } },
     nuevoTurnoId: number,
     presencial = false,
   ) {
@@ -465,6 +474,10 @@ export class ReservaService {
 
     const nuevoTurno = await this.prisma.turno.findUnique({ where: { id: nuevoTurnoId }, include: { tipoActividad: true } });
     if (!nuevoTurno) throw new BadRequestException('El turno especificado no existe');
+
+    if (nuevoTurno.tipoActividad_id !== reservaActual.turno.tipoActividad_id) {
+      throw new BadRequestException('No es posible reprogramar a un turno de otra actividad');
+    }
 
     if (
       nuevoTurnoId === reservaActual.turno_id ||
@@ -653,9 +666,11 @@ export class ReservaService {
       const puedeReprogramar = horas >= 48 && ausencias < 2 && reservaActual.cant_reprogramaciones < 2;
       return { message: 'La reserva ya estaba cancelada', puedeReprogramar };
     }
+    this.assertPuedeCancelarReserva(reservaActual);
     try {
       await this.cancelarReserva(id, reservaActual.turno_id);
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       this.logger.error(`Error al cancelar la reserva: ${String(error)}`);
       throw new InternalServerErrorException('Ocurrió un error inesperado al cancelar el turno');
     }

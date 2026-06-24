@@ -21,6 +21,7 @@ type TurnoDisponibleApi = {
   fecha?: string
   espacios_libres?: number
   estado?: string
+  tipoActividad_id?: number
   tipoActividad?: { nombre: string } | null
 }
 
@@ -39,6 +40,8 @@ interface Props {
   abierto: boolean
   reservaId: number | null
   fechaActual: string | null
+  tipoActividadId: number | null
+  actividadNombre?: string | null
   presencial?: boolean
   onClose: () => void
   onReprogramado: () => void
@@ -48,6 +51,8 @@ export default function ReprogramarReservaModal({
   abierto,
   reservaId,
   fechaActual,
+  tipoActividadId,
+  actividadNombre,
   presencial = false,
   onClose,
   onReprogramado,
@@ -80,12 +85,17 @@ export default function ReprogramarReservaModal({
     apiFetch<TurnoDisponibleApi[]>(`/turnos?fecha=${fecha}`)
       .then((data) =>
         setTurnos(
-          (data ?? []).filter((t) => (t.espacios_libres ?? 0) > 0 && t.estado !== 'CANCELADO'),
+          (data ?? []).filter(
+            (t) =>
+              (t.espacios_libres ?? 0) > 0 &&
+              t.estado !== 'CANCELADO' &&
+              (tipoActividadId == null || t.tipoActividad_id === tipoActividadId),
+          ),
         ),
       )
       .catch((e: any) => toast.error('No se pudieron cargar los turnos', { description: e.message }))
       .finally(() => setCargandoTurnos(false))
-  }, [abierto, fecha])
+  }, [abierto, fecha, tipoActividadId])
 
   const opciones = useMemo(() => {
     return turnos
@@ -154,7 +164,8 @@ export default function ReprogramarReservaModal({
 
         <h3 className="text-lg font-bold text-slate-800">Reprogramar turno</h3>
         <p className="mt-1 text-sm text-slate-500">
-          Elegí una nueva fecha y un turno con cupo disponible.
+          Elegí una nueva fecha y un turno con cupo disponible
+          {actividadNombre ? ` de ${actividadNombre}` : ' de la misma actividad'}.
         </p>
 
         <div className="mt-4 space-y-3">
@@ -180,7 +191,13 @@ export default function ReprogramarReservaModal({
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-kine-blue bg-white disabled:opacity-60"
             >
               <option value="">
-                {cargandoTurnos ? 'Cargando…' : opciones.length ? 'Seleccioná un turno' : 'No hay turnos con cupo'}
+                {cargandoTurnos
+                  ? 'Cargando…'
+                  : opciones.length
+                    ? 'Seleccioná un turno'
+                    : actividadNombre
+                      ? `No hay turnos con cupo de ${actividadNombre}`
+                      : 'No hay turnos con cupo de la misma actividad'}
               </option>
               {opciones.map((o) => (
                 <option key={o.id} value={o.id}>

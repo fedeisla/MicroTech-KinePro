@@ -180,15 +180,16 @@ export default function ProximosTurnosHome() {
                 <p className="mt-2 text-base font-semibold text-slate-900">{detalle.horario} hs</p>
               </div>
 
-              {minutosHastaTurno(detalle.fecha, detalle.horario) > 30 ? (
+              {minutosHastaTurno(detalle.fecha, detalle.horario) > 30 && (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center text-sm text-amber-900">
                   El control de asistencia al turno se habilitará 30 minutos antes de su horario de inicio.
                 </div>
-              ) : detalle.inscriptos.length === 0 ? (
+              )}
+
+              {detalle.inscriptos.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-slate-500">No hay inscriptos en este turno.</div>
               ) : (
                 <div className="space-y-3">
-
                   {detalle.inscriptos.map((p) => {
                     const esPresente = p.estado === 'ASISTIO'
                     const esAusente = p.estado === 'AUSENTE'

@@ -63,23 +63,28 @@ export class EstadisticasService {
   async obtenerDemandaActividad(desde: string, hasta: string) {
     const { fechaDesde, fechaHastaFin } = this.validarRango(desde, hasta);
 
-    const reservas = await this.prisma.reserva.findMany({
-      where: {
-        turno: { fecha: { gte: fechaDesde, lte: fechaHastaFin } },
-      },
-      select: {
-        turno: { select: { tipoActividad: { select: { nombre: true } } } },
-      },
+    const agrupado = await this.prisma.turno.groupBy({
+      by: ['tipoActividad_id'],
+      where: { fecha: { gte: fechaDesde, lte: fechaHastaFin } },
+      _sum: { cantidad_inscriptos: true },
     });
 
-    const conteo = new Map<string, number>();
-    for (const r of reservas) {
-      const nombre = r.turno.tipoActividad.nombre;
-      conteo.set(nombre, (conteo.get(nombre) ?? 0) + 1);
+    if (agrupado.length === 0) {
+      return { items: [] };
     }
 
-    const items = Array.from(conteo.entries())
-      .map(([actividad, cantidad]) => ({ actividad, cantidad }))
+    const actividades = await this.prisma.tipoActividad.findMany({
+      where: { id: { in: agrupado.map((g) => g.tipoActividad_id) } },
+      select: { id: true, nombre: true },
+    });
+    const nombresPorId = new Map(actividades.map((a) => [a.id, a.nombre]));
+
+    const items = agrupado
+      .map((g) => ({
+        actividad: nombresPorId.get(g.tipoActividad_id) ?? 'Desconocida',
+        cantidad: g._sum.cantidad_inscriptos ?? 0,
+      }))
+      .filter((i) => i.cantidad > 0)
       .sort((a, b) => b.cantidad - a.cantidad);
 
     return { items };

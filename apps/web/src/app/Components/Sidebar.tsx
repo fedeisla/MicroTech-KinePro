@@ -24,6 +24,13 @@ const LINKS: LinkConfig[] = [
   { href: '/#acerca-de',    label: 'Acerca de',    rolesPermitidos: 'todos', soloNoAutenticadosYPacientes: true },
 ]
 
+function getLinkLabel(link: LinkConfig, rol: Rol | null): string {
+  if (link.href === '/' && (rol === 'ADMIN' || rol === 'OWNER')) {
+    return 'Asistencia'
+  }
+  return link.label
+}
+
 export default function Sidebar() {
   const pathname = usePathname()
   const { rol, isAuthenticated, cargando } = useAuth()
@@ -117,7 +124,7 @@ export default function Sidebar() {
                 }
               }}
             >
-              {link.label}
+              {getLinkLabel(link, rol)}
             </Link>
           ))
         )}

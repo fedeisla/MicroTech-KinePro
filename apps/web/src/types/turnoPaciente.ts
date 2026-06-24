@@ -3,6 +3,7 @@ export interface TurnoPacientePendiente {
   fecha: string
   hora: string
   actividad: string
+  tipoActividadId: number
 }
 
 export interface TurnoPacientePasado {
