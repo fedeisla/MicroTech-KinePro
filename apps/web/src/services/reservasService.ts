@@ -17,6 +17,7 @@ export interface ReservaFijaResponse {
   message: string;
   descuentoAplicado?: string;
   cantidadTurnos?: number;
+  reservaIds?: number[];
 }
 
 export async function crearReservaFija(turnoBaseId: number, fechasMensuales: Date[]): Promise<ReservaFijaResponse> {

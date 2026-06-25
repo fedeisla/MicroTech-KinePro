@@ -37,4 +37,22 @@ export class PagosController {
   verificarPagoMP(@Param('reservaId', ParseIntPipe) reservaId: number) {
     return this.pagosService.verificarPagoMP(reservaId)
   }
+
+  @Roles('PACIENTE')
+  @Post('mercadopago/preference-fijo')
+  crearPreferenceMPFijo(@Body() body: { reservaIds: number[] }) {
+    return this.pagosService.crearPreferenceMPFijo(body.reservaIds)
+  }
+
+  @Roles('PACIENTE')
+  @Post('mercadopago/verificar-fijo/:grupoId')
+  verificarPagoMPFijo(@Param('grupoId', ParseIntPipe) grupoId: number) {
+    return this.pagosService.verificarPagoMPFijo(grupoId)
+  }
+
+  @Roles('PACIENTE')
+  @Post('mercadopago/cancelar-fijo')
+  cancelarPagoMPFijo(@Body() body: { reservaIds: number[] }) {
+    return this.pagosService.cancelarPagoMPFijo(body.reservaIds)
+  }
 }

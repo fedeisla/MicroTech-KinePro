@@ -68,3 +68,30 @@ export async function verificarPagoMP(reservaId: number) {
     { method: 'POST' },
   )
 }
+
+export async function crearPreferenceMPFijo(reservaIds: number[]) {
+  return authFetch<{ init_point: string; preference_id: string; grupoId: number }>(
+    `/pagos/mercadopago/preference-fijo`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reservaIds }),
+    },
+  )
+}
+
+export async function verificarPagoMPFijo(grupoId: number) {
+  return authFetch<{ status: string; message: string }>(
+    `/pagos/mercadopago/verificar-fijo/${grupoId}`,
+    { method: 'POST' },
+  )
+}
+
+export async function cancelarPagoMPFijo(reservaIds: number[]) {
+  return authFetch<{ message: string }>(
+    `/pagos/mercadopago/cancelar-fijo`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reservaIds }),
+    },
+  )
+}

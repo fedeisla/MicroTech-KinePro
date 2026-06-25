@@ -5,6 +5,9 @@ import { crearPaciente } from '@/services/usuariosService';
 import { Clock, Loader2, CalendarDays, ClipboardList, CheckCircle2, ArrowRight, ArrowLeft, TicketPercent } from 'lucide-react';
 import { RangoHorarioBackend, Actividad } from '@/types/turno';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '@/hooks/useAuth';
+import { getTurnoById } from '@/services/turnosService';
+import { chequearDescuento } from '@/services/reservasService';
 
 interface Props {
   mesActual: number;
@@ -31,6 +34,9 @@ export default function PanelMensual({
   
   const [[paso, direccion], setPasoConfig] = useState<[1 | 2, number]>([1, 0]);
   const [fechaHasta, setFechaHasta] = useState('');
+  const [precioUnitario, setPrecioUnitario] = useState<number>(0);
+  const [aplicaDescuento, setAplicaDescuento] = useState(false);
+  const { usuario } = useAuth();
 
   const calcularFechasFijas = () => {
     if (diasSeleccionados.length === 0 || !fechaHasta) return [];
@@ -53,6 +59,31 @@ export default function PanelMensual({
     const finSugerido = new Date(anioActual, mesActual, Math.min(primerDia + 21, ultimoDiaMes));
     setFechaHasta(formatearFechaLocal(finSugerido));
   }, [diasSeleccionados, mesActual, anioActual]);
+
+  // Cargar el precio del turno cuando se selecciona la actividad
+  useEffect(() => {
+    if (!actividadSeleccionada) {
+      setPrecioUnitario(0);
+      return;
+    }
+    getTurnoById(actividadSeleccionada.id)
+      .then((t) => setPrecioUnitario(t.precio ?? 0))
+      .catch(() => setPrecioUnitario(0));
+  }, [actividadSeleccionada]);
+
+  // Chequear si el paciente califica para descuento
+  useEffect(() => {
+    const email = adminMode ? adminEmail : usuario?.email;
+    if (!email) {
+      setAplicaDescuento(false);
+      return;
+    }
+    chequearDescuento(email)
+      .then((res) => setAplicaDescuento(res.aplica))
+      .catch(() => setAplicaDescuento(false));
+  }, [adminMode, adminEmail, usuario?.email]);
+
+
   const handleSiguiente = () => setPasoConfig([2, 1]);
   const handleVolver = () => setPasoConfig([1, -1]);
 
@@ -168,7 +199,7 @@ export default function PanelMensual({
               animate="centro"
               exit="salir"
               transition={{ duration: 0.3, ease: "easeInOut" }}
-              className="flex-1 flex flex-col absolute inset-0"
+              className="flex-1 flex flex-col absolute inset-0 overflow-y-auto pr-1"
             >
               <button onClick={handleVolver} className="text-sm text-slate-500 font-semibold flex items-center gap-1 mb-4 hover:text-slate-800 transition-colors w-fit">
                 <ArrowLeft className="w-4 h-4" /> Volver
@@ -179,7 +210,7 @@ export default function PanelMensual({
               <div className="bg-teal-50 border border-teal-100 rounded-xl p-4 mb-4">
                 <p className="text-teal-800 font-semibold mb-1">{actividadSeleccionada?.nombre}</p>
                 <p className="text-teal-600 text-sm flex items-center gap-2">
-                  <Clock className="w-4 h-4" /> Las 4 sesiones a las {rangoSeleccionado?.desde} hs
+                  <Clock className="w-4 h-4" /> Las {fechasCalculadas.length} sesiones a las {rangoSeleccionado?.desde} hs
                 </p>
               </div>
 
@@ -193,26 +224,56 @@ export default function PanelMensual({
                 />
               </div>
 
-              <div className="mb-4 overflow-y-auto max-h-[120px] custom-scrollbar pr-2">
+              <div className="mb-4">
                 <p className="text-sm font-bold text-slate-700 mb-2">
                   Sesiones del mismo día ({fechasCalculadas.length} turnos):
                 </p>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5">
                   {fechasCalculadas.map((fecha, idx) => (
-                    <span key={idx} className="bg-slate-100 border border-slate-200 text-slate-700 text-xs px-3 py-1.5 rounded-lg font-semibold shadow-sm">
+                    <span key={idx} className="bg-slate-100 border border-slate-200 text-slate-700 text-xs px-2.5 py-1 rounded-lg font-semibold">
                       {fecha.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}
                     </span>
                   ))}
                 </div>
               </div>
 
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3 mt-auto mb-6 shadow-sm">
-                <TicketPercent className="w-6 h-6 text-amber-500 shrink-0" />
-                <div>
-                  <p className="text-amber-800 text-sm font-bold">20% de descuento</p>
-                  <p className="text-amber-700 text-xs mt-0.5">Sujeto a validación de asistencia previa al momento del pago.</p>
-                </div>
-              </div>
+              {/* Desglose dinámico de precio */}
+              {precioUnitario > 0 && fechasCalculadas.length > 0 ? (() => {
+                const formatear = (n: number) =>
+                  n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                const subtotal = precioUnitario * fechasCalculadas.length;
+                const descuento = aplicaDescuento ? subtotal * 0.2 : 0;
+                const total = subtotal - descuento;
+                return (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mt-auto mb-6 shadow-sm">
+                    <div className="text-sm space-y-1">
+                      <div className="flex justify-between text-slate-600">
+                        <span>Subtotal ({fechasCalculadas.length} × ${formatear(precioUnitario)})</span>
+                        <span className="font-semibold">${formatear(subtotal)}</span>
+                      </div>
+                      {aplicaDescuento && (
+                        <div className="flex justify-between text-emerald-700">
+                          <span className="flex items-center gap-1">
+                            <TicketPercent className="w-4 h-4" /> Descuento 20%
+                          </span>
+                          <span className="font-semibold">-${formatear(descuento)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-slate-800 pt-2 border-t border-slate-200">
+                        <span className="font-bold">Total a pagar</span>
+                        <span className="font-bold">${formatear(total)}</span>
+                      </div>
+                      {!aplicaDescuento && (
+                        <p className="text-xs text-amber-700 mt-2">
+                          No calificás para descuento (tenés ausencias o reprogramaciones).
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })() : (
+                <div className="mt-auto mb-6" />
+              )}
 
               {adminMode && (
                 <div className="mb-3">
