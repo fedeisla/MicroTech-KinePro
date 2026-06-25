@@ -99,3 +99,9 @@ export async function registrarAsistenciaReserva(
     body: JSON.stringify({ estado }),
   })
 }
+
+export async function chequearDescuento(email: string) {
+  return apiFetch<{ aplica: boolean; porcentaje: number; ausencias: number; totalReprogramaciones: number }>(
+    `/reserva/aplica-descuento?email=${encodeURIComponent(email)}`
+  )
+}

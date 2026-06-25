@@ -95,3 +95,21 @@ export async function crearPaciente(payload: {
     omitToken: true, // registro público
   })
 }
+
+export async function obtenerPacientes() {
+  const token = localStorage.getItem('kinepro_token')
+  const res = await fetch(`${API}/usuarios`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    const msg = data?.message ?? 'No se pudieron cargar los pacientes'
+    throw new Error(Array.isArray(msg) ? msg.join(', ') : msg)
+  }
+  const usuarios = data?.data ?? []
+  // Solo PACIENTEs
+  return usuarios.filter((u: any) => u.rol === 'PACIENTE')
+}

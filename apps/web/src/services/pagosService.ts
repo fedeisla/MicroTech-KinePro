@@ -8,6 +8,7 @@ export type MetodoPagoPresencial = 'EFECTIVO' | 'TARJETA'
 export interface RegistrarPagoInput {
   reserva_id: number
   metodo: MetodoPagoPresencial
+  monto?: number
 }
 
 export async function registrarPago(input: RegistrarPagoInput): Promise<{ message: string }> {

@@ -7,6 +7,7 @@ import {
   crearReservaPresencial,
   crearReservaFijaPresencial,
   cancelarReservaPresencial,
+  chequearDescuento,
 } from '@/services/reservasService'
 import ReprogramarReservaModal from '@/components/turnos/ReprogramarReservaModal'
 import InfoDialog, { tituloYMensajeDesdeApi } from '@/app/Components/InfoDialog'
@@ -14,6 +15,8 @@ import { fechasMismoDiaSemana, parseFechaLocal } from '@/lib/fechas'
 import { ChevronDown } from 'lucide-react'
 import type { TurnoResumen, TurnoDetalle, EstadoTurno } from '@/types/turno'
 import { getTurnoById } from '@/services/turnosService'
+import { registrarPago } from '@/services/pagosService'
+import { obtenerPacientes } from '@/services/usuariosService'
 
 interface TurnoGridProps {
   fecha: string | null
@@ -34,6 +37,13 @@ const ESTADO_LABEL: Record<EstadoTurno, string> = {
   CANCELADO:  'Cancelado',
 }
 
+type PacienteOption = {
+  id: number
+  nombre: string
+  apellido: string
+  email: string
+}
+
 function formatFecha(isoDate: string): string {
   const [year, month, day] = isoDate.split('-')
   return `${day}/${month}/${year}`
@@ -43,12 +53,6 @@ export default function TurnoGrid({ fecha, turnos, loading, onTurnosActualizados
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [detalle, setDetalle] = useState<TurnoDetalle | null>(null)
   const [loadingDetalle, setLoadingDetalle] = useState(false)
-
-  // Colapsar al cambiar de fecha
-  useEffect(() => {
-    setExpandedId(null)
-    setDetalle(null)
-  }, [fecha])
 
   async function handleToggle(turno: TurnoResumen) {
     if (expandedId === turno.id) {
@@ -188,7 +192,29 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
   const [reprogramarReservaId, setReprogramarReservaId] = useState<number | null>(null)
   const [cancelarReservaId, setCancelarReservaId] = useState<number | null>(null)
   const [cancelando, setCancelando] = useState(false)
+  const [metodoPago, setMetodoPago] = useState<'EFECTIVO' | 'TARJETA' | ''>('')
+  const [pacientes, setPacientes] = useState<PacienteOption[]>([])
+  const [aplicaDescuento, setAplicaDescuento] = useState(false)
   const [errorDialog, setErrorDialog] = useState<{ titulo: string; mensaje: string } | null>(null)
+
+  useEffect(() => {
+    if (!esAdmin) return
+    obtenerPacientes()
+      .then((data) => setPacientes(data))
+      .catch((err) => {
+        toast.error('No se pudieron cargar los pacientes', { description: err.message })
+      })
+  }, [esAdmin])
+
+  useEffect(() => {
+    if (tipoReserva !== 'fijo' || !email) {
+      setAplicaDescuento(false)
+      return
+    }
+    chequearDescuento(email)
+      .then((res) => setAplicaDescuento(res.aplica))
+      .catch(() => setAplicaDescuento(false))
+  }, [email, tipoReserva])
 
   if (detalle.inscriptos.length === 0 && !esAdmin) {
     return <p className="text-xs text-neutral-gray">Sin inscriptos en este turno.</p>
@@ -203,11 +229,33 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
 
   const handleReservarPorEmail = async () => {
     try {
-      if (!email) return toast.error('Ingrese el email del paciente')
+      if (!email) return toast.error('Seleccione un paciente')
+      if (!metodoPago) return toast.error('Debe seleccionar un método de pago para continuar')
       setLoading(true)
-      await crearReservaPresencial(email, detalle.id)
-      toast.success('Reserva registrada con éxito')
+
+      // 1. Crear la reserva
+      const resReserva: any = await crearReservaPresencial(email, detalle.id)
+      const reservaId = resReserva?.reservaId ?? resReserva?.id
+
+      if (!reservaId) {
+        // Si el back no devolvió un id usable, igual avisamos
+        toast.success('Reserva registrada con éxito')
+        setEmail('')
+        setMetodoPago('')
+        if (onReservaCreada) await onReservaCreada()
+        return
+      }
+
+      // 2. Registrar el pago presencial asociado
+      try {
+        await registrarPago({ reserva_id: reservaId, metodo: metodoPago as 'EFECTIVO' | 'TARJETA' })
+        toast.success('Pago registrado con éxito')
+      } catch (pagoErr: any) {
+        toast.error('No se pudo registrar el pago', { description: pagoErr.message || String(pagoErr) })
+      }
+
       setEmail('')
+      setMetodoPago('')
       if (onReservaCreada) await onReservaCreada()
     } catch (err: any) {
       toast.error('No se pudo crear la reserva', { description: err.message || String(err) })
@@ -215,6 +263,7 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
       setLoading(false)
     }
   }
+  
 
   const handleCancelarConfirmado = async () => {
     if (!cancelarReservaId) return
@@ -239,18 +288,51 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
 
   const handleReservarFijosPorEmail = async () => {
     try {
-      if (!email) return toast.error('Ingrese el email del paciente')
+      if (!email) return toast.error('Seleccione un paciente')
+      if (!metodoPago) return toast.error('Debe seleccionar un método de pago para continuar')
       if (!fechaFin) return toast.error('Ingrese la fecha de fin')
       if (!fecha) return toast.error('No se pudo obtener la fecha del turno')
-      
+
       setLoading(true)
       const fechas = calcularFechasFixas(fecha, fechaFin)
       if (fechas.length === 0) {
         return toast.error('La fecha de fin debe ser igual o posterior al turno seleccionado')
       }
-      const respuesta = await crearReservaFijaPresencial(email, detalle.id, fechas)
+
+      // 1. Crear las reservas fijas (el back las asocia al paciente del email seleccionado)
+      const respuesta: any = await crearReservaFijaPresencial(email, detalle.id, fechas)
       toast.success(respuesta.message)
+
+      // 2. Registrar el pago de cada reserva creada
+      const reservaIds: number[] = respuesta?.reservaIds ?? []
+      if (reservaIds.length > 0) {
+        // Calculamos el monto por reserva (con descuento aplicado si corresponde)
+        const precioUnitario = detalle.precio ?? 0
+        const montoPorReserva = aplicaDescuento ? precioUnitario * 0.8 : precioUnitario
+      
+        let pagosOk = 0
+        let pagosFail = 0
+        for (const rid of reservaIds) {
+          try {
+            await registrarPago({
+              reserva_id: rid,
+              metodo: metodoPago as 'EFECTIVO' | 'TARJETA',
+              monto: montoPorReserva,
+            })
+            pagosOk++
+          } catch (e) {
+            pagosFail++
+          }
+        }
+        if (pagosFail === 0) {
+          toast.success(`Pagos registrados (${pagosOk})`)
+        } else {
+          toast.error(`Se registraron ${pagosOk} pagos, ${pagosFail} fallaron`)
+        }
+      }
+
       setEmail('')
+      setMetodoPago('')
       setFechaFin('')
       if (onReservaCreada) await onReservaCreada()
     } catch (err: any) {
@@ -335,9 +417,74 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
 
       {esAdmin && (
         <div className="mt-3 border-t pt-3 space-y-2">
-          <label className="text-xs text-slate-600 mb-1 block">Email del paciente</label>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@ejemplo.com" className="w-full p-2 border rounded-md text-sm" />
           
+          <label className="text-xs text-slate-600 mb-1 block">Paciente</label>
+          <select
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full p-2 border rounded-md text-sm bg-white"
+          >
+            <option value="">Seleccionar paciente</option>
+            {pacientes.map((p) => (
+              <option key={p.id} value={p.email}>
+                {p.nombre} {p.apellido}
+              </option>
+            ))}
+          </select>
+          
+          <label className="text-xs text-slate-600 mb-1 block mt-2">Método de pago</label>
+          <select
+            value={metodoPago}
+            onChange={(e) => setMetodoPago(e.target.value as 'EFECTIVO' | 'TARJETA' | '')}
+            className="w-full p-2 border rounded-md text-sm bg-white"
+          >
+            <option value="">Seleccionar método</option>
+            <option value="EFECTIVO">Efectivo</option>
+            <option value="TARJETA">Posnet</option>
+          </select>
+          
+          {(() => {
+            const precioUnitario = detalle.precio ?? 0
+            const formatear = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                    
+            if (tipoReserva === 'unico') {
+              return (
+                <div className="mt-2 text-xs text-slate-600">
+                  Monto a abonar: <span className="font-bold text-slate-800">${formatear(precioUnitario)}</span>
+                </div>
+              )
+            }
+          
+            // Modalidad fijo
+            let cantidadTurnos = 0
+            if (fecha && fechaFin) {
+              cantidadTurnos = calcularFechasFixas(fecha, fechaFin).length
+            }
+          
+            const subtotal = precioUnitario * cantidadTurnos
+            const descuento = aplicaDescuento ? subtotal * 0.2 : 0
+            const total = subtotal - descuento
+          
+            return (
+              <div className="mt-2 text-xs text-slate-600">
+                {cantidadTurnos > 0 ? (
+                  <>
+                    <div>Subtotal: <span className="font-semibold text-slate-700">${formatear(subtotal)}</span> <span className="text-slate-500">({cantidadTurnos} turnos × ${formatear(precioUnitario)})</span></div>
+                    {aplicaDescuento && (
+                      <div className="text-emerald-700">Descuento 20%: -${formatear(descuento)}</div>
+                    )}
+                    <div className="mt-1">Total a cobrar: <span className="font-bold text-slate-800">${formatear(total)}</span></div>
+                    {!aplicaDescuento && email && (
+                      <div className="text-amber-700 mt-1">El paciente no califica para descuento (tiene ausencias o reprogramaciones).</div>
+                    )}
+                  </>
+                ) : (
+                  <>Monto total a abonar: <span className="font-bold text-slate-800">$-</span> <span className="text-slate-400">(ingresá una fecha de fin)</span></>
+                )}
+              </div>
+            )
+          })()}
+
           <div className="flex gap-3">
             <label className="flex items-center gap-2 text-xs cursor-pointer">
               <input type="radio" name="tipo" value="unico" checked={tipoReserva === 'unico'} onChange={(e) => setTipoReserva('unico')} />

@@ -77,6 +77,15 @@ export class ReservaController {
     return this.reservaService.filtrarReservas(pacienteId, estado);
   }
 
+  @Roles('ADMIN', 'OWNER', 'PACIENTE')
+  @Get('aplica-descuento')
+  aplicaDescuento(@Query('email') email: string) {
+    if (!email) {
+      throw new BadRequestException('Debe indicar el email del paciente');
+    }
+    return this.reservaService.chequearDescuento(email);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.reservaService.findOne(+id);
@@ -101,4 +110,6 @@ export class ReservaController {
     const pacienteId = req.user.pacienteId;
     return this.reservaService.remove(+id, pacienteId);
   }
+
+  
 }

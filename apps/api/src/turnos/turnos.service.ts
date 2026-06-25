@@ -191,6 +191,7 @@ export class TurnosService {
       hora_inicio: turno.hora_inicio,
       tipoActividad_id: turno.tipoActividad_id,
       actividad: turno.tipoActividad.nombre,
+      precio: Number(turno.tipoActividad.precio),
       cantidad_reservas: turno.cantidad_inscriptos,
       espacios_libres: turno.capacidad - turno.cantidad_inscriptos,
       capacidad: turno.capacidad,

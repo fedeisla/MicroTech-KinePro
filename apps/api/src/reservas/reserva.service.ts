@@ -783,20 +783,22 @@ export class ReservaService {
     const aplicaDescuento = ausencias < 2 && totalReprogramaciones < 2;
     const porcentajeDescuento = aplicaDescuento ? 20 : 0;
 
+    const reservaIds: number[] = [];
     //Escenario 6 
     try {
       await this.prisma.$transaction(async (tx) => {
         
-        // Armamos el array de datos para crear múltiples reservas en bloque
-        const reservasData = turnosIds.map(turnoId => ({
-          paciente_id: pacienteId,
-          turno_id: turnoId,
-          estado: EstadoReserva.CONFIRMADA, 
-        }));
-
-        await tx.reserva.createMany({
-          data: reservasData,
-        });
+        // Creamos cada reserva individualmente para poder capturar sus IDs
+        for (const turnoId of turnosIds) {
+          const r = await tx.reserva.create({
+            data: {
+              paciente_id: pacienteId,
+              turno_id: turnoId,
+              estado: EstadoReserva.CONFIRMADA,
+            },
+          });
+          reservaIds.push(r.id);
+        }
 
         // Actualizamos los inscriptos de los turnos seleccionados
         for (const turnoId of turnosIds) {
@@ -842,7 +844,8 @@ export class ReservaService {
       return {
         message: mensajeRespuesta,
         descuentoAplicado: `${porcentajeDescuento}%`,
-        cantidadTurnos: turnosIds.length
+        cantidadTurnos: turnosIds.length,
+        reservaIds
       };
 
     } catch (error) {
@@ -882,6 +885,42 @@ export class ReservaService {
     }
 
     return this.crearReservaFija(usuario.paciente.id, turnoInicialId, fechasString);
+  }
+
+  async chequearDescuento(email: string) {
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { email },
+      include: { paciente: true },
+    });
+  
+    if (!usuario || !usuario.paciente) {
+      throw new BadRequestException('El email no corresponde a un paciente registrado');
+    }
+  
+    const pacienteId = usuario.paciente.id;
+  
+    const ausencias = await this.prisma.reserva.count({
+      where: { paciente_id: pacienteId, estado: EstadoReserva.AUSENTE },
+    });
+  
+    const reservasConReprogramacion = await this.prisma.reserva.findMany({
+      where: { paciente_id: pacienteId, cant_reprogramaciones: { gt: 0 } },
+      select: { cant_reprogramaciones: true },
+    });
+  
+    const totalReprogramaciones = reservasConReprogramacion.reduce(
+      (acc, curr) => acc + curr.cant_reprogramaciones,
+      0,
+    );
+  
+    const aplica = ausencias < 2 && totalReprogramaciones < 2;
+  
+    return {
+      aplica,
+      porcentaje: aplica ? 20 : 0,
+      ausencias,
+      totalReprogramaciones,
+    };
   }
 
 }

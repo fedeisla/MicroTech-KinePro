@@ -80,6 +80,7 @@ export async function getTurnoById(id: number): Promise<TurnoDetalle> {
     fecha: data.fecha,
     horario: extractHora(data.hora_inicio),
     actividad: data.actividad,
+    precio: data.precio,
     tipoActividadId: data.tipoActividad_id,
     capacidad: data.capacidad,
     reservasActuales: data.cantidad_inscriptos ?? data.cantidad_reservas ?? 0,

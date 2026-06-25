@@ -32,16 +32,18 @@ export class PagosService {
     if (!reserva) {
       throw new NotFoundException('La reserva no existe')
     }
-
+  
     const pagoExistente = await this.prisma.pago.findFirst({
       where: { reserva_id: dto.reserva_id, estado: 'COMPLETADO' },
     })
     if (pagoExistente) {
       throw new BadRequestException('La reserva ya tiene un pago registrado')
     }
-
-    const monto = reserva.turno.tipoActividad.precio
-
+  
+    // Si el front envía un monto explícito (ej. precio con descuento aplicado), lo usamos.
+    // Si no, usamos el precio completo del tipo de actividad.
+    const monto = dto.monto !== undefined ? dto.monto : Number(reserva.turno.tipoActividad.precio)
+  
     await this.prisma.$transaction(async (tx) => {
       await tx.pago.create({
         data: {
@@ -57,7 +59,7 @@ export class PagosService {
         data: { estado: 'CONFIRMADA' },
       })
     })
-
+  
     return { message: 'Pago registrado correctamente' }
   }
 
