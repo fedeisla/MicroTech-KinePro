@@ -284,4 +284,236 @@ export class PagosService {
     
     return { status: 'pendiente', message: 'Aún no se detectó pago aprobado' }
   }
+
+  // ============================================================
+  // Crear preference de MercadoPago para N reservas (turnos fijos)
+  // ============================================================
+  async crearPreferenceMPFijo(reservaIds: number[]) {
+    if (!reservaIds || reservaIds.length === 0) {
+      throw new BadRequestException('Debe indicar al menos una reserva')
+    }
+
+    const reservas = await this.prisma.reserva.findMany({
+      where: { id: { in: reservaIds } },
+      include: { turno: { include: { tipoActividad: true } } },
+    })
+
+    if (reservas.length !== reservaIds.length) {
+      throw new NotFoundException('Alguna de las reservas no existe')
+    }
+
+    // Validar que todas son del mismo paciente y de la misma actividad
+    const pacienteIds = new Set(reservas.map((r) => r.paciente_id))
+    if (pacienteIds.size !== 1) {
+      throw new BadRequestException('Las reservas no pertenecen al mismo paciente')
+    }
+    const actividadIds = new Set(reservas.map((r) => r.turno.tipoActividad_id))
+    if (actividadIds.size !== 1) {
+      throw new BadRequestException('Las reservas deben ser de la misma actividad')
+    }
+
+    // Validar que todas están pendientes (sin pago aprobado)
+    for (const r of reservas) {
+      if (r.estado !== 'PENDIENTE') {
+        throw new BadRequestException(`La reserva ${r.id} no está en estado pendiente de pago`)
+      }
+    }
+
+    const pacienteId = reservas[0].paciente_id
+    const actividad = reservas[0].turno.tipoActividad
+    const precioBase = Number(actividad.precio)
+
+    // Chequear descuento
+    const ausencias = await this.prisma.reserva.count({
+      where: { paciente_id: pacienteId, estado: 'AUSENTE' },
+    })
+    const reservasConReprog = await this.prisma.reserva.findMany({
+      where: { paciente_id: pacienteId, cant_reprogramaciones: { gt: 0 } },
+      select: { cant_reprogramaciones: true },
+    })
+    const totalReprog = reservasConReprog.reduce((acc, c) => acc + c.cant_reprogramaciones, 0)
+    const aplicaDescuento = ausencias < 2 && totalReprog < 2
+    const precioPorReserva = aplicaDescuento ? precioBase * 0.8 : precioBase
+
+    const cantidad = reservas.length
+    const firstReservaId = Math.min(...reservaIds)
+    const titulo = `Turnos fijos - ${actividad.nombre}`
+
+    const preferenceClient = new Preference(this.mpClient)
+    const preferenceResp = await preferenceClient.create({
+      body: {
+        items: [
+          {
+            id: `fijo-${firstReservaId}`,
+            title: titulo,
+            quantity: cantidad,
+            unit_price: precioPorReserva,
+            currency_id: 'ARS',
+          },
+        ],
+        external_reference: `fijo-${firstReservaId}`,
+        back_urls: {
+          success: `${this.frontUrl}/pago/exitoso`,
+          failure: `${this.frontUrl}/pago/fallido`,
+          pending: `${this.frontUrl}/pago/pendiente`,
+        },
+      },
+    })
+
+    // Crear N Pagos en estado PENDIENTE, todos con el mismo preference_id
+    await this.prisma.$transaction(async (tx) => {
+      for (const r of reservas) {
+        await tx.pago.create({
+          data: {
+            reserva_id: r.id,
+            monto: precioPorReserva,
+            metodo: 'MERCADOPAGO',
+            estado: 'PENDIENTE',
+            mercadopago_preference_id: preferenceResp.id ?? null,
+          },
+        })
+      }
+    })
+
+    return {
+      init_point: preferenceResp.init_point,
+      preference_id: preferenceResp.id,
+      grupoId: firstReservaId,
+    }
+  }
+
+  // ============================================================
+  // Verificar pago de un grupo de reservas fijas
+  // ============================================================
+  async verificarPagoMPFijo(grupoId: number) {
+    // Buscamos un pago "ancla" para sacar el preference_id compartido
+    const pagoAncla = await this.prisma.pago.findFirst({
+      where: { reserva_id: grupoId, metodo: 'MERCADOPAGO' },
+      orderBy: { id: 'desc' },
+    })
+    if (!pagoAncla || !pagoAncla.mercadopago_preference_id) {
+      throw new NotFoundException('No se encontró el pago grupal')
+    }
+
+    const pagosGrupo = await this.prisma.pago.findMany({
+      where: { mercadopago_preference_id: pagoAncla.mercadopago_preference_id },
+      include: { reserva: true },
+    })
+
+    // Si ya está confirmado el grupo entero
+    if (pagosGrupo.every((p) => p.estado === 'COMPLETADO')) {
+      return { status: 'ok', message: 'Pago confirmado' }
+    }
+    if (pagosGrupo.every((p) => p.estado === 'RECHAZADO')) {
+      return { status: 'rechazado', message: 'El pago fue rechazado por MercadoPago' }
+    }
+
+    // Consultar a MP por external_reference
+    const paymentClient = new Payment(this.mpClient)
+    const results: any = await paymentClient.search({
+      options: { external_reference: `fijo-${grupoId}` },
+    })
+
+    const approved = results?.results?.find((p: any) => p.status === 'approved')
+
+    if (approved) {
+      await this.prisma.$transaction(async (tx) => {
+        for (const p of pagosGrupo) {
+          if (p.estado !== 'COMPLETADO') {
+            await tx.pago.update({
+              where: { id: p.id },
+              data: {
+                estado: 'COMPLETADO',
+                fecha_pago: new Date(),
+                mercadopago_payment_id: String(approved.id),
+              },
+            })
+          }
+          if (p.reserva.estado !== 'CONFIRMADA') {
+            await tx.reserva.update({
+              where: { id: p.reserva_id },
+              data: { estado: 'CONFIRMADA' },
+            })
+          }
+        }
+
+        // Auditoría del descuento (si aplicó al momento del pago)
+        const pacienteId = pagosGrupo[0].reserva.paciente_id
+        const precioReserva = Number(pagosGrupo[0].monto)
+        const ahora = new Date()
+        const mesAplicable = new Date(Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth(), 1))
+        // Si el monto < precio normal de la actividad, hubo descuento (chequeo barato)
+        const reservaSample = await tx.reserva.findUnique({
+          where: { id: pagosGrupo[0].reserva_id },
+          include: { turno: { include: { tipoActividad: true } } },
+        })
+        if (reservaSample && precioReserva < Number(reservaSample.turno.tipoActividad.precio)) {
+          await tx.descuento.create({
+            data: {
+              paciente_id: pacienteId,
+              porcentaje: 20,
+              motivo: 'Reserva de turnos fijos sin ausencias ni reprogramaciones',
+              mes_aplicable: mesAplicable,
+              utilizado: true,
+            },
+          })
+        }
+      })
+      return { status: 'ok', message: 'Pago confirmado' }
+    }
+
+    const rejected = results?.results?.find((p: any) => p.status === 'rejected')
+    if (rejected) {
+      await this.prisma.$transaction(async (tx) => {
+        for (const p of pagosGrupo) {
+          await tx.pago.update({
+            where: { id: p.id },
+            data: {
+              estado: 'RECHAZADO',
+              mercadopago_payment_id: String(rejected.id),
+            },
+          })
+          await tx.reserva.update({
+            where: { id: p.reserva_id },
+            data: { estado: 'CANCELADA' },
+          })
+          await tx.turno.update({
+            where: { id: p.reserva.turno_id },
+            data: { cantidad_inscriptos: { decrement: 1 } },
+          })
+        }
+      })
+      return { status: 'rechazado', message: 'El pago fue rechazado por MercadoPago' }
+    }
+
+    return { status: 'pendiente', message: 'Aún no se detectó pago aprobado' }
+  }
+
+  // ============================================================
+  // Cancelar pago grupal (timeout / cancelación del usuario)
+  // ============================================================
+  async cancelarPagoMPFijo(reservaIds: number[]) {
+    if (!reservaIds || reservaIds.length === 0) return { message: 'Nada que cancelar' }
+
+    const reservas = await this.prisma.reserva.findMany({
+      where: { id: { in: reservaIds } },
+    })
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const r of reservas) {
+        if (r.estado === 'PENDIENTE') {
+          await tx.reserva.update({
+            where: { id: r.id },
+            data: { estado: 'CANCELADA' },
+          })
+          await tx.turno.update({
+            where: { id: r.turno_id },
+            data: { cantidad_inscriptos: { decrement: 1 } },
+          })
+        }
+      }
+    })
+
+    return { message: 'Reservas canceladas' }
+  }
 }

@@ -13,7 +13,14 @@ import SelectorModalidad from './SelectorModalidad';
 import GrillaCalendario from './GrillaCalendario';
 import PanelHorarios from './PanelHorarios';
 import PanelMensual from './PanelMensual';
-import { crearPreferenceMP, verificarPagoMP, cancelarPagoMP } from '@/services/pagosService';
+import {
+  crearPreferenceMP,
+  verificarPagoMP,
+  cancelarPagoMP,
+  crearPreferenceMPFijo,
+  verificarPagoMPFijo,
+  cancelarPagoMPFijo,
+} from '@/services/pagosService';
 
 export default function ReservaTurnos() {
   
@@ -55,6 +62,8 @@ export default function ReservaTurnos() {
   const intervaloRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reservaIdEsperaRef = useRef<number | null>(null);
+  const reservaIdsGrupoEsperaRef = useRef<number[] | null>(null);
+  const grupoIdEsperaRef = useRef<number | null>(null);
 
   // Buscamos todos los turnos con capacidad para ponerlos en el calendario
   useEffect(() => {
@@ -243,22 +252,111 @@ export default function ReservaTurnos() {
   const handleConfirmarReservaFija = async (fechasMensuales: Date[]) => {
     if (!actividadSeleccionada || fechasMensuales.length === 0) return;
 
-    try {
-      let respuesta;
-      if (esAdmin) {
+    // ─── Rama ADMIN (presencial) — sin cambios ──────────────────────────
+    if (esAdmin) {
+      try {
         if (!adminEmail) throw new Error('Ingrese el email del paciente');
-        respuesta = await crearReservaFijaPresencial(adminEmail, actividadSeleccionada.id, fechasMensuales);
-      } else {
-        respuesta = await crearReservaFija(actividadSeleccionada.id, fechasMensuales);
+        const respuesta = await crearReservaFijaPresencial(adminEmail, actividadSeleccionada.id, fechasMensuales);
+        toast.success(respuesta.message, { duration: 5000 });
+        resetSeleccion();
+        setModalidad('UNICO');
+      } catch (error: any) {
+        toast.error('No pudimos registrar tu reserva fija', {
+          description: error.message || 'Ocurrió un problema. Intentá de nuevo.',
+        });
       }
-      toast.success(respuesta.message, { duration: 5000 });
-      resetSeleccion();
-      setModalidad('UNICO');
-    } catch (error: any) {
-      toast.error('No pudimos registrar tu reserva fija', {
-        description: error.message || 'Ocurrió un problema. Intentá de nuevo.',
-      });
+      return;
     }
+
+    // ─── Rama PACIENTE (con MercadoPago) ────────────────────────────────
+
+    // FASE 1: crear las reservas en estado PENDIENTE
+    let respuesta;
+    try {
+      toast.info('Procesando reserva…', { duration: 2000 });
+      respuesta = await crearReservaFija(actividadSeleccionada.id, fechasMensuales);
+    } catch (reservaError: any) {
+      toast.error(reservaError.message || 'No se pudo crear la reserva', { duration: 5000 });
+      return;
+    }
+
+    const reservaIds: number[] = respuesta.reservaIds ?? [];
+    if (reservaIds.length === 0) {
+      toast.error('No se pudieron identificar las reservas creadas');
+      return;
+    }
+
+    // FASE 2: crear la preference MP del grupo
+    let pref;
+    try {
+      pref = await crearPreferenceMPFijo(reservaIds);
+    } catch (mpError) {
+      await cancelarPagoMPFijo(reservaIds).catch(() => {});
+      toast.error('No se pudo conectar con MercadoPago, intente nuevamente', { duration: 5000 });
+      return;
+    }
+
+    if (!pref.init_point) {
+      await cancelarPagoMPFijo(reservaIds).catch(() => {});
+      toast.error('No se pudo conectar con MercadoPago, intente nuevamente', { duration: 5000 });
+      return;
+    }
+
+    // FASE 3: abrir MP y arrancar polling
+    const mpWindow = window.open(pref.init_point, '_blank');
+    if (!mpWindow) {
+      await cancelarPagoMPFijo(reservaIds).catch(() => {});
+      toast.error('El navegador bloqueó la ventana. Habilitá pop-ups y reintentá.', { duration: 5000 });
+      return;
+    }
+
+    setEsperandoPago(true);
+    setPagoConfirmado(false);
+    reservaIdsGrupoEsperaRef.current = reservaIds;
+    grupoIdEsperaRef.current = pref.grupoId;
+
+    intervaloRef.current = setInterval(async () => {
+      try {
+        const r = await verificarPagoMPFijo(pref.grupoId);
+        if (r.status === 'ok') {
+          if (intervaloRef.current) clearInterval(intervaloRef.current);
+          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          reservaIdsGrupoEsperaRef.current = null;
+          grupoIdEsperaRef.current = null;
+          setEsperandoPago(false);
+          toast.success('¡Pago confirmado por MercadoPago!');
+          resetSeleccion();
+          setModalidad('UNICO');
+        } else if (r.status === 'cancelado') {
+          if (intervaloRef.current) clearInterval(intervaloRef.current);
+          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          reservaIdsGrupoEsperaRef.current = null;
+          grupoIdEsperaRef.current = null;
+          setEsperandoPago(false);
+          toast.error('La reserva fue cancelada');
+        } else if (r.status === 'rechazado') {
+          if (intervaloRef.current) clearInterval(intervaloRef.current);
+          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          reservaIdsGrupoEsperaRef.current = null;
+          grupoIdEsperaRef.current = null;
+          setEsperandoPago(false);
+          toast.error('El pago fue rechazado por MercadoPago');
+        }
+      } catch (e) {
+        // silencioso
+      }
+    }, 3000);
+
+    timeoutRef.current = setTimeout(async () => {
+      if (intervaloRef.current) clearInterval(intervaloRef.current);
+      if (!pagoConfirmado) {
+        await cancelarPagoMPFijo(reservaIds).catch(() => {});
+        reservaIdsGrupoEsperaRef.current = null;
+        grupoIdEsperaRef.current = null;
+        setEsperandoPago(false);
+        toast.error('Tiempo agotado para realizar el pago. La reserva fue cancelada.', { duration: 5000 });
+      }
+    }, 5 * 60 * 1000);
   };
 
   const handleCancelarPago = async () => {
@@ -278,6 +376,16 @@ export default function ReservaTurnos() {
         // silencioso
       }
       reservaIdEsperaRef.current = null;
+    }
+    if (reservaIdsGrupoEsperaRef.current) {
+      try {
+        await cancelarPagoMPFijo(reservaIdsGrupoEsperaRef.current);
+        toast.info('Reservas canceladas.');
+      } catch (e) {
+        // silencioso
+      }
+      reservaIdsGrupoEsperaRef.current = null;
+      grupoIdEsperaRef.current = null;
     }
     setEsperandoPago(false);
     setPagoConfirmado(false);
@@ -314,7 +422,7 @@ export default function ReservaTurnos() {
         </div>
 
         
-        <div className="flex flex-col h-full min-h-[380px]">
+        <div className="flex flex-col h-full min-h-[560px]">
           {modalidad === 'UNICO' ? (
              <PanelHorarios 
                diaSeleccionado={diaPrincipal} 

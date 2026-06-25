@@ -19,12 +19,17 @@ export class ReservaController {
     const pacienteId = req.user.pacienteId;
     return this.reservaService.create(createReservaDto, pacienteId);
   }
+  
   @Roles('PACIENTE')
   @Post('fija')
   crearFija(@Req() req, @Body() body: {turnoInicialId:number, fechas: string[] }) {
     const pacienteId = req.user.pacienteId;
-     console.log(pacienteId);
-    return this.reservaService.crearReservaFija(pacienteId,body.turnoInicialId, body.fechas);
+    return this.reservaService.crearReservaFija(
+      pacienteId,
+      body.turnoInicialId,
+      body.fechas,
+      EstadoReserva.PENDIENTE,
+    );
   }
 
   @Roles('ADMIN', 'OWNER')
