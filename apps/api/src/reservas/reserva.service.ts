@@ -720,7 +720,12 @@ export class ReservaService {
   }
 
   
-  async crearReservaFija(pacienteId: number, turnoInicialId: number, fechasString: string[]) {
+  async crearReservaFija(
+    pacienteId: number,
+    turnoInicialId: number,
+    fechasString: string[],
+    estadoInicial: EstadoReserva = EstadoReserva.CONFIRMADA,
+  ) {
 
 
     const turnoBase = await this.prisma.turno.findUnique({
@@ -798,7 +803,7 @@ export class ReservaService {
             data: {
               paciente_id: pacienteId,
               turno_id: turnoId,
-              estado: EstadoReserva.CONFIRMADA,
+              estado: estadoInicial,
             },
           });
           reservaIds.push(r.id);
@@ -812,22 +817,6 @@ export class ReservaService {
           });
         }
 
-        // Guardar el descuento si corresponde (para auditoría y futuros pagos)
-        if (aplicaDescuento) {
-          const ahora = new Date();
-          // Obtener el primer día del mes actual para mes_aplicable
-          const mesAplicable = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-          
-          await tx.descuento.create({
-            data: {
-              paciente_id: pacienteId,
-              porcentaje: new Decimal(20),
-              motivo: 'Reserva de turnos fijos sin ausencias ni reprogramaciones',
-              mes_aplicable: mesAplicable,
-              utilizado: false,
-            }
-          });
-        }
 
         // ACÁ IRÍA LA LÓGICA DEL PAGO (redirige, genera el link, etc).
         // Si el pago falla o da error la promesa del pago, se lanza un throw Error, 
