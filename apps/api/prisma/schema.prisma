@@ -1,7 +1,3 @@
-// Placeholder dejado por el scaffolding inicial.
-// El proyecto arranca SIN ORM ni base de datos. Cuando definan el
-// stack de persistencia, reemplacen el contenido por el schema real
-// (o borren toda esta carpeta y elijan otro ORM).
 // ==========================================
 // CONFIGURACIÓN INICIAL
 // ==========================================
@@ -10,12 +6,12 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql" // Asumiendo Postgres según tu contexto anterior
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 // ==========================================
-// ENUMS (Opciones para los campos ENUM del diagrama)
+// ENUMS
 // ==========================================
 enum RolUsuario {
   ADMIN
@@ -86,94 +82,92 @@ enum EstadoNotificacion {
   ERROR
 }
 
+// 1. NUEVO ENUM PARA LA LISTA DE ESPERA
+enum EstadoListaEspera {
+  PENDIENTE
+  NOTIFICADO
+  ASIGNADO
+  CANCELADO
+  EXPIRADO
+}
+
 // ==========================================
 // MODELOS (Tablas)
 // ==========================================
 
 model Usuario {
-  id             Int        @id @default(autoincrement())
-  nombre         String
-  apellido       String
-  dni            String     @unique
-  telefono       String     @unique
-  email          String     @unique
-  contrasena     String
-  rol            RolUsuario
-  fecha_registro DateTime   @default(now()) @db.Date
+  id               Int        @id @default(autoincrement())
+  nombre           String
+  apellido         String
+  dni              String     @unique
+  telefono         String     @unique
+  email            String     @unique
+  contrasena       String
+  rol              RolUsuario
+  fecha_registro   DateTime   @default(now()) @db.Date
   
-  //Migrarlo a bd el campo los de abajo y hacer todo lo demas
-  intentosFallidos    Int      @default(0)
-  bloqueado           Boolean  @default(false)
-  token               String?  @unique 
-  
-  //Comment: Hacer una tabla de sesion por usuario y cada sesion tendra
-  //un intento fallido y ver si esta bloqueado o no
+  intentosFallidos Int        @default(0)
+  bloqueado        Boolean    @default(false)
+  token            String?    @unique 
 
-  // Relaciones 1 a 1 (Un usuario puede ser Paciente o Kinesiólogo)
-  paciente       Paciente?
-  kinesiologo    Kinesiologo?
+  paciente         Paciente?
+  kinesiologo      Kinesiologo?
 }
 
 model Paciente {
-  id                    Int       @id @default(autoincrement())
-  usuario_id            Int       @unique
-  usuario               Usuario   @relation(fields: [usuario_id], references: [id])
-  tipo_plan             TipoPlan
-  fecha_nacimiento      DateTime  @db.Date
-  ausenciasMesActual    Int       @default(0)
+  id                 Int       @id @default(autoincrement())
+  usuario_id         Int       @unique
+  usuario            Usuario   @relation(fields: [usuario_id], references: [id])
+  tipo_plan          TipoPlan
+  fecha_nacimiento   DateTime  @db.Date
+  ausenciasMesActual Int       @default(0)
 
-  // Relaciones inversas (Un paciente tiene...)
-  reservas              Reserva[]
-  lista_espera          ListaEspera[]
-  descuentos            Descuento[]
-  notificaciones        Notificacion[]
+  reservas           Reserva[]
+  lista_espera       ListaEspera[]
+  descuentos         Descuento[]
+  notificaciones     Notificacion[]
 }
 
 model Kinesiologo {
-  id         Int       @id @default(autoincrement())
-  usuario_id Int       @unique
-  usuario    Usuario   @relation(fields: [usuario_id], references: [id])
+  id          Int       @id @default(autoincrement())
+  usuario_id  Int       @unique
+  usuario     Usuario   @relation(fields: [usuario_id], references: [id])
 
-  // Relaciones inversas (Un kinesiólogo tiene...)
-  actividades    Actividad[]
+  actividades Actividad[]
 }
 
 model TipoActividad {
-  id     Int     @id @default(autoincrement())
-  nombre String  @unique
-  precio Decimal @db.Decimal(10, 2)
+  id          Int       @id @default(autoincrement())
+  nombre      String    @unique
+  precio      Decimal   @db.Decimal(10, 2)
 
-  // Relaciones inversas
   actividades Actividad[]
   turnos      Turno[]
 }
 
 model Actividad {
-  id             Int         @id @default(autoincrement())
-  tipoActividad_id   Int
-  tipoActividad      TipoActividad   @relation(fields: [tipoActividad_id], references: [id])
-  kinesiologo_id Int
-  kinesiologo    Kinesiologo @relation(fields: [kinesiologo_id], references: [id])
-  dia_semana     DiaSemana
-  hora_inicio    DateTime    @db.Time
-  hora_fin       DateTime    @db.Time
-  fecha_desde    DateTime    @db.Date
-  fecha_hasta    DateTime?   @db.Date
-
-  // Relaciones inversas
+  id               Int           @id @default(autoincrement())
+  tipoActividad_id Int
+  tipoActividad    TipoActividad @relation(fields: [tipoActividad_id], references: [id])
+  kinesiologo_id   Int
+  kinesiologo      Kinesiologo   @relation(fields: [kinesiologo_id], references: [id])
+  dia_semana       DiaSemana
+  hora_inicio      DateTime      @db.Time
+  hora_fin         DateTime      @db.Time
+  fecha_desde      DateTime      @db.Date
+  fecha_hasta      DateTime?     @db.Date
 }
 
 model Turno {
-  id                  Int             @id @default(autoincrement())
+  id                  Int           @id @default(autoincrement())
   tipoActividad_id    Int
-  tipoActividad       TipoActividad   @relation(fields: [tipoActividad_id], references: [id])
-  fecha               DateTime        @db.Date
-  hora_inicio         DateTime        @db.Time
-  estado              EstadoTurno     @default(DISPONIBLE)
+  tipoActividad       TipoActividad @relation(fields: [tipoActividad_id], references: [id])
+  fecha               DateTime      @db.Date
+  hora_inicio         DateTime      @db.Time
+  estado              EstadoTurno   @default(DISPONIBLE)
   capacidad           Int
-  cantidad_inscriptos Int             @default(0)
+  cantidad_inscriptos Int           @default(0)
 
-  // Relaciones inversas
   reservas            Reserva[]
   lista_espera        ListaEspera[]
 
@@ -191,33 +185,34 @@ model Reserva {
   fecha_estado          DateTime      @updatedAt
   cant_reprogramaciones Int           @default(0)
 
-  // Relaciones inversas
   pagos                 Pago[]
   notificaciones        Notificacion[]
 }
 
 model Pago {
-  id          Int        @id @default(autoincrement())
-  reserva_id  Int
-  reserva     Reserva    @relation(fields: [reserva_id], references: [id])
-  monto       Decimal    @db.Decimal(10, 2)
-  metodo      MetodoPago
-  estado      EstadoPago @default(PENDIENTE)
-  fecha_pago  DateTime?
-  comprobante String?    // Guardará la URL o ruta del comprobante
+  id                        Int        @id @default(autoincrement())
+  reserva_id                Int
+  reserva                   Reserva    @relation(fields: [reserva_id], references: [id])
+  monto                     Decimal    @db.Decimal(10, 2)
+  metodo                    MetodoPago
+  estado                    EstadoPago @default(PENDIENTE)
+  fecha_pago                DateTime?
+  comprobante               String?
   mercadopago_preference_id String?
   mercadopago_payment_id    String?
 }
 
+// 2. MODELO REFACTORIZADO: LISTA DE ESPERA
 model ListaEspera {
-  id              Int      @id @default(autoincrement())
-  turno_id        Int
-  turno           Turno    @relation(fields: [turno_id], references: [id])
-  paciente_id     Int
-  paciente        Paciente @relation(fields: [paciente_id], references: [id])
-  tipo_plan       TipoPlan
-  posicion        Int
-  fecha_anotacion DateTime @default(now())
+  id                 Int               @id @default(autoincrement())
+  turno_id           Int
+  turno              Turno             @relation(fields: [turno_id], references: [id])
+  paciente_id        Int
+  paciente           Paciente          @relation(fields: [paciente_id], references: [id])
+  prioridad          Int               
+  estado             EstadoListaEspera @default(PENDIENTE)
+  fecha_anotacion    DateTime          @default(now())
+  fecha_notificacion DateTime?         
 }
 
 model Descuento {
@@ -249,4 +244,12 @@ model Notificacion {
   descripcion String
   leida       Boolean            @default(false)
   estado      EstadoNotificacion @default(PENDIENTE)
+}
+
+// 3. NUEVO MODELO: CONFIGURACIÓN DEL SISTEMA
+model ConfiguracionSistema {
+  id                    Int @id @default(1) 
+  porcentajeListaEspera Int @default(20)    
+  contadorRespiracion   Int @default(0)
+  horasExpiracionEspera Int @default(12)     
 }

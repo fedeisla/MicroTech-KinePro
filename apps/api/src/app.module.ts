@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule } from '@nestjs/config';
 import { HealthModule } from './health/health.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
@@ -15,10 +17,13 @@ import { MailService } from './mail/mail.service';
 import { MailModule } from './mail/mail.module';
 import { EstadisticasModule } from './estadisticas/estadisticas.module';
 import { ConfiguracionModule } from './configuracion/configuracion.module';
+import { ListaEsperaModule } from './lista-espera/lista-espera.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    EventEmitterModule.forRoot(),
+    ScheduleModule.forRoot(),
     HealthModule,
     PrismaModule,
     UsuariosModule,
@@ -29,6 +34,7 @@ import { ConfiguracionModule } from './configuracion/configuracion.module';
     PagosModule,
     MailModule,
     EstadisticasModule,
+    ListaEsperaModule,
     ConfiguracionModule
     
   ],

@@ -7,10 +7,11 @@ import { MailService } from '@/mail/mail.service';
 import { EstadoReserva, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { ConfiguracionService } from '@/configuracion/configuracion.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
 export class ReservaService {
-  constructor(private prisma: PrismaService, private notificacionesService: NotificacionesService, private mailService: MailService, private configuracionService: ConfiguracionService,) {}
+  constructor(private prisma: PrismaService, private notificacionesService: NotificacionesService, private mailService: MailService, private eventEmitter: EventEmitter2,, private configuracionService: ConfiguracionService,) {}
   private readonly logger = new Logger(ReservaService.name);
 
   private async crearNotificacionReservaCreada(
@@ -804,11 +805,12 @@ export class ReservaService {
         data: { cantidad_inscriptos: { decrement: 1 } },
       });
     });
-
-    await this.notificacionesService.cancelarNotificacionesDeReserva(reservaId);
-
+    this.eventEmitter.emit('turno.liberado', { turnoId });
+    
+   
     // Crear notificación de cancelación y enviar email
     try {
+      await this.notificacionesService.cancelarNotificacionesDeReserva(reservaId);
       const reserva = await this.prisma.reserva.findUnique({ where: { id: reservaId }, include: { turno: { include: { tipoActividad: true } }, paciente: { include: { usuario: true } } } });
       if (reserva && reserva.paciente && reserva.paciente.usuario) {
         await this.crearNotificacionReservaCancelada(
@@ -847,7 +849,9 @@ export class ReservaService {
     });
     const horas = this.horasHastaTurno(reservaActual);
     const puedeReprogramar = horas >= 48 && ausencias < 2 && reservaActual.cant_reprogramaciones < 2;
+      
     return { message: 'Reserva cancelada', puedeReprogramar };
+  
     // NOTA: mantenemos el registro (no hard delete)
   }
 

@@ -14,6 +14,10 @@ function calcularHoraHasta(horaDesde: string): string {
   const proximaHora = (parseInt(h) + 1).toString().padStart(2, '0');
   return `${proximaHora}:${m}`;
 }
+export interface DiasDisponiblesResponse {
+  diasConCupo: number[];
+  diasLlenos: number[];
+}
 
 
 
@@ -132,8 +136,8 @@ export async function getHorariosTurnos(fecha: string): Promise<RangoHorarioBack
   
 }
 
-export async function getDiasDisponiblesDelMes(mes: number, anio: number): Promise<number[]> {
-  return apiFetch<number[]>(`/turnos/dias-disponibles/${mes}/${anio}`, { omitToken: true });
+export async function getDiasDisponiblesDelMes(mes: number, anio: number): Promise<DiasDisponiblesResponse> {
+  return apiFetch<DiasDisponiblesResponse>(`/turnos/dias-disponibles/${mes}/${anio}`, { omitToken: true });
 }
 
 export async function getReservasMes(mes: number, anio: number): Promise<TurnoEventoMes[]> {

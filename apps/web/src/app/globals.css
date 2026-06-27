@@ -2,10 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body { background: #F1F1F1; color: #1A1A1A; }
-html {
-  scroll-behavior: smooth;
-}
 :root {
   /* 1. Colores de la Marca */
   --kine-blue: #005C9C;
@@ -24,10 +20,13 @@ html {
   --pure-white: #FFFFFF;
   --neutral-gray: #757575;
   --light-bg-gray: #F1F1F1;
+  --text-main: #1A1A1A; /* <-- Agregamos tu gris oscuro como variable oficial */
 }
 
-/* Opcional: Aplicar el fondo gris claro por defecto a toda la página */
-body {
+/* Reglas globales unificadas usando las variables */
+html, body {
   background-color: var(--light-bg-gray);
-  color: var(--neutral-gray); /* o un gris más oscuro para el texto principal */
+  color: var(--text-main);
+  scroll-behavior: smooth;
 }
+
