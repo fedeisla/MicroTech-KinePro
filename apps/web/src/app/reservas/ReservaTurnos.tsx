@@ -7,6 +7,7 @@ import { Actividad, RangoHorarioBackend } from '@/types/turno';
 import { CrearReservaInput } from '@/types/reserva';
 import { crearReserva, crearReservaFija, crearReservaPresencial, crearReservaFijaPresencial } from '@/services/reservasService';
 import { useAuth } from '@/hooks/useAuth';
+import { BannerEspera } from './BannerEspera'; 
 
 // Importamos los hijos
 import SelectorModalidad from './SelectorModalidad';
@@ -14,24 +15,27 @@ import GrillaCalendario from './GrillaCalendario';
 import PanelHorarios from './PanelHorarios';
 import PanelMensual from './PanelMensual';
 import { crearPreferenceMP, verificarPagoMP, cancelarPagoMP } from '@/services/pagosService';
+import { listaEsperaService } from '@/services/listaEsperaService';
 
 export default function ReservaTurnos() {
   
   const [modalidad, setModalidad] = useState<'UNICO' | 'MENSUAL'>('UNICO');
-  
   const hoy = new Date();
-   
+
+  const [solicitudEspera, setSolicitudEspera] = useState<any>(null);
+  const [cargandoCancelacion, setCargandoCancelacion] = useState(false);
+
   // Estados del calendario
   const [mesActual, setMesActual] = useState<number>(hoy.getMonth());
   const [anioActual, setAnioActual] = useState<number>(hoy.getFullYear());
   
-  // NUEVO: Array de días seleccionados (en vez de uno solo)
+  // Array de días seleccionados
   const [diasSeleccionados, setDiasSeleccionados] = useState<number[]>([]);
-  // El día principal para mandarle a la API a buscar los horarios
   const diaPrincipal = diasSeleccionados.length > 0 ? diasSeleccionados[0] : null;
    
   // Estados de datos del backend
   const [diasConCupo, setDiasConCupo] = useState<number[]>([]);
+  const [diasLlenos, setDiasLlenos] = useState<number[]>([]);
   const [horariosDelDia, setHorariosDelDia] = useState<RangoHorarioBackend[]>([]);
    
   // Estados de selección
@@ -41,6 +45,7 @@ export default function ReservaTurnos() {
   // Estados de UI (Cargas)
   const [cargandoDias, setCargandoDias] = useState<boolean>(false);
   const [cargandoHorarios, setCargandoHorarios] = useState<boolean>(false);
+  
   // Auth
   const { rol } = useAuth();
   const esAdmin = rol === 'ADMIN' || rol === 'OWNER';
@@ -56,19 +61,138 @@ export default function ReservaTurnos() {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reservaIdEsperaRef = useRef<number | null>(null);
 
-  // Buscamos todos los turnos con capacidad para ponerlos en el calendario
+  const handleCancelarEspera = async () => {
+    if (!solicitudEspera) return;
+    setCargandoCancelacion(true);
+    try {
+      await listaEsperaService.cancelar(solicitudEspera.id);
+      setSolicitudEspera(null);
+      toast.info('Solicitud de espera cancelada');
+    } catch (error) {
+      toast.error('No se pudo cancelar la solicitud');
+    } finally {
+      setCargandoCancelacion(false);
+    }
+  };
+
+  const handleResponderNotificacion = async (acepta: boolean) => {
+    if (!solicitudEspera) return;
+    setCargandoCancelacion(true);
+
+    try {
+      if (!acepta) {
+        await listaEsperaService.responderNotificacion(
+          solicitudEspera.id, 
+          false, 
+          solicitudEspera.turnoId
+        );
+        toast.info('Rechazaste el turno');
+        setSolicitudEspera(null);
+        return;
+      }
+
+      toast.info('Aceptando turno y abriendo MercadoPago...', { duration: 2000 });
+
+      const resReserva = await listaEsperaService.responderNotificacion(
+        solicitudEspera.id, 
+        true, 
+        solicitudEspera.turnoId
+      );
+
+      if (!resReserva || !resReserva.reservaId) {
+        throw new Error('El servidor no devolvió el ID de la reserva para generar el pago.');
+      }
+
+      let pref;
+      try {
+        pref = await crearPreferenceMP(resReserva.reservaId);
+      } catch (mpError) {
+        await cancelarPagoMP(resReserva.reservaId).catch(() => {});
+        toast.error('No se pudo conectar con MercadoPago, intente nuevamente', { duration: 5000 });
+        return;
+      }
+
+      if (!pref.init_point) {
+        await cancelarPagoMP(resReserva.reservaId).catch(() => {});
+        toast.error('No se pudo generar el link de pago.', { duration: 5000 });
+        return;
+      }
+
+      const mpWindow = window.open(pref.init_point, '_blank');
+      if (!mpWindow) {
+        await cancelarPagoMP(resReserva.reservaId).catch(() => {});
+        toast.error('El navegador bloqueó la ventana. Habilitá pop-ups y reintentá.', { duration: 5000 });
+        return;
+      }
+
+      setEsperandoPago(true);
+      setPagoConfirmado(false);
+      reservaIdEsperaRef.current = resReserva.reservaId;
+
+      intervaloRef.current = setInterval(async () => {
+        try {
+          if (resReserva?.reservaId === undefined) {
+            toast.error('No se pudo iniciar el proceso de verificación: ID de reserva faltante.');
+            return;
+          }
+          const r = await verificarPagoMP(resReserva.reservaId);
+          if (r.status === 'ok') {
+            if (intervaloRef.current) clearInterval(intervaloRef.current);
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            setEsperandoPago(false); 
+            setSolicitudEspera(null); 
+            toast.success('¡Pago confirmado por MercadoPago! Tu turno está reservado.');
+          } else if (r.status === 'cancelado') {
+            if (intervaloRef.current) clearInterval(intervaloRef.current);
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            setEsperandoPago(false);
+            toast.error('La reserva fue cancelada.');
+          } else if (r.status === 'rechazado') {
+            if (intervaloRef.current) clearInterval(intervaloRef.current);
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            setEsperandoPago(false);
+            toast.error('El pago fue rechazado por MercadoPago.');
+          }
+        } catch (e) {
+          // Silencioso para que el polling siga intentando
+        }
+      }, 3000);
+
+      timeoutRef.current = setTimeout(async () => {
+        if (intervaloRef.current) clearInterval(intervaloRef.current);
+        if (!pagoConfirmado) {
+          if (resReserva?.reservaId) {
+            await cancelarPagoMP(resReserva.reservaId).catch(() => {});
+          }
+          reservaIdEsperaRef.current = null;
+          setEsperandoPago(false);
+          toast.error('Tiempo agotado para pagar. La oportunidad fue cancelada y pasará al siguiente en la lista.', { duration: 5000 });
+        }
+      }, 5 * 60 * 1000);
+
+    } catch (error: any) {
+      toast.error(error.message || 'Error al procesar tu respuesta');
+    } finally {
+      setCargandoCancelacion(false);
+    }
+  };
+
   useEffect(() => {
     const fetchDiasDisponibles = async () => {
       try {
         setCargandoDias(true);
-        const diasConLugar = await getDiasDisponiblesDelMes(mesActual + 1, anioActual);
-        setDiasConCupo(diasConLugar);
+        // Ahora getDiasDisponiblesDelMes devuelve el objeto { diasConCupo, diasLlenos }
+        const respuesta = await getDiasDisponiblesDelMes(mesActual + 1, anioActual);
+        
+        setDiasConCupo(respuesta.diasConCupo);
+        setDiasLlenos(respuesta.diasLlenos);
       } catch (error) {
         toast.error('Error al cargar el calendario', {
           description: 'No pudimos conectarnos con el servidor. Por favor, intentá de nuevo en unos minutos.',
           duration: 4000,
         });
         setDiasConCupo([]);
+        setDiasLlenos([]); // Limpiamos los dos por si falla
       } finally {
         setCargandoDias(false);
       }
@@ -78,21 +202,18 @@ export default function ReservaTurnos() {
     resetSeleccion();
   }, [mesActual, anioActual]);
 
-  // Buscamos del día principal que seleccionó, el horario y las actividades
   useEffect(() => {
     const fetchHorarios = async () => {
       if (!diaPrincipal) return; 
       
       try {
         setCargandoHorarios(true);
-        
         const mesFormateado = String(mesActual + 1).padStart(2, '0');
         const diaFormateado = String(diaPrincipal).padStart(2, '0'); 
         const fechaConsulta = `${anioActual}-${mesFormateado}-${diaFormateado}`;
 
         const turnosAgrupados = await getHorariosTurnos(fechaConsulta);
         setHorariosDelDia(turnosAgrupados);
-
       } catch (error) {
         setHorariosDelDia([]);
         toast.error('Error al cargar los horarios', {
@@ -106,6 +227,20 @@ export default function ReservaTurnos() {
 
     fetchHorarios();
   }, [diaPrincipal, mesActual, anioActual]); 
+
+  useEffect(() => {
+    const cargarEstadoEspera = async () => {
+      try {
+        const estado = await listaEsperaService.getMiEstado();
+        setSolicitudEspera(estado);
+      } catch (e) {
+        console.log("No hay solicitud de espera activa");
+        setSolicitudEspera(null);
+      }
+    };
+
+    cargarEstadoEspera();
+  }, []);
 
   const mesAnterior = () => {
     if (mesActual === 0) {
@@ -132,11 +267,6 @@ export default function ReservaTurnos() {
     setHorariosDelDia([]);
   };
 
-  const handleSeleccionarHorario = (rango: RangoHorarioBackend) => {
-    setRangoSeleccionado(rango);
-    setActividadSeleccionada(null); 
-  };
-
   const handleConfirmarTurno = async () => {
     if (!diaPrincipal || !actividadSeleccionada || !rangoSeleccionado) return;
 
@@ -144,7 +274,6 @@ export default function ReservaTurnos() {
       turno_id: actividadSeleccionada.id,
     };
 
-    // Flujo admin: reserva presencial, sin pago MP
     if (esAdmin) {
       try {
         if (!adminEmail) throw new Error('Ingrese el email del paciente');
@@ -162,9 +291,6 @@ export default function ReservaTurnos() {
       return;
     }
 
-    // Flujo paciente: 2 fases con catches separados
-
-    // FASE 1: crear reserva
     let resReserva;
     try {
       toast.info('Procesando reserva…', { duration: 2000 });
@@ -174,12 +300,10 @@ export default function ReservaTurnos() {
       return;
     }
 
-    // FASE 2: crear preference MP
     let pref;
     try {
       pref = await crearPreferenceMP(resReserva.reservaId);
     } catch (mpError) {
-      // MP falló: cancelar la reserva pendiente para liberar el cupo
       await cancelarPagoMP(resReserva.reservaId).catch(() => {});
       toast.error('No se pudo conectar con MercadoPago, intente nuevamente', { duration: 5000 });
       return;
@@ -191,7 +315,6 @@ export default function ReservaTurnos() {
       return;
     }
 
-    // FASE 3: abrir MP y arrancar polling
     const mpWindow = window.open(pref.init_point, '_blank');
     if (!mpWindow) {
       await cancelarPagoMP(resReserva.reservaId).catch(() => {});
@@ -210,7 +333,7 @@ export default function ReservaTurnos() {
           console.log('LLEGÓ EL OK - cerrando modal');
           if (intervaloRef.current) clearInterval(intervaloRef.current);
           if (timeoutRef.current) clearTimeout(timeoutRef.current);
-          setEsperandoPago(false); //poner en true para ver el modal de pago confirmado
+          setEsperandoPago(false); 
           toast.success('¡Pago confirmado por MercadoPago!');
         } else if (r.status === 'cancelado') {
           if (intervaloRef.current) clearInterval(intervaloRef.current);
@@ -224,20 +347,19 @@ export default function ReservaTurnos() {
           toast.error('El pago fue rechazado por MercadoPago');
         }
       } catch (e) {
-        // silencioso, el polling sigue
+        // silencioso
       }
     }, 3000);
 
     timeoutRef.current = setTimeout(async () => {
       if (intervaloRef.current) clearInterval(intervaloRef.current);
       if (!pagoConfirmado) {
-        // Liberar la reserva pendiente que nunca se pagó
         await cancelarPagoMP(resReserva.reservaId).catch(() => {});
         reservaIdEsperaRef.current = null;
         setEsperandoPago(false);
         toast.error('Tiempo agotado para realizar el pago. La reserva fue cancelada.', { duration: 5000 });
       }
-    }, 5 * 60 * 1000);
+    }, 12 * 60 * 60 * 1000); // 12 horas ajustadas en el backend
   };
 
   const handleConfirmarReservaFija = async (fechasMensuales: Date[]) => {
@@ -283,38 +405,81 @@ export default function ReservaTurnos() {
     setPagoConfirmado(false);
   };
 
-  return (
-    <div className="w-full max-w-5xl mx-auto p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
-      
-      <SelectorModalidad 
-        modalidad={modalidad} 
-        onChangeModalidad={(mod) => {
-          setModalidad(mod);
-          resetSeleccion(); 
-        }} 
-      />
+  const handleAnotarEnEspera = async () => {
+    if (!diaPrincipal || !actividadSeleccionada || !rangoSeleccionado) return;
+    try {
+        await listaEsperaService.inscribir({
+          turnoId: actividadSeleccionada!.id,
+          prioridad: 2
+        });
+        toast.success('¡Te anotaste correctamente!');
+      } catch (error: any) {
+        toast.error(error.message || 'Error al procesar la solicitud');
+      }
+  };
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-6">
-        
-        
-        <div className="md:col-span-2 border-b md:border-b-0 md:border-r border-slate-100 pb-6 md:pb-0 md:pr-6">
-          <GrillaCalendario 
-            modalidad={modalidad} 
-            mesActual={mesActual}
-            anioActual={anioActual}
-            diasSeleccionados={diasSeleccionados} 
-            setDiasSeleccionados={setDiasSeleccionados} 
-            diasConCupo={diasConCupo}
-            cargandoDias={cargandoDias}
-            mesAnterior={mesAnterior}
-            mesSiguiente={mesSiguiente}
-            setRangoSeleccionado={setRangoSeleccionado}
-            setActividadSeleccionada={setActividadSeleccionada}
+  const handleNotificarApertura = async () => {
+    if (!diaPrincipal) return;
+    try {
+      console.log(`Guardando alerta de apertura para el día ${diaPrincipal}`);
+    } catch (error) {
+      toast.error('Error al configurar la alerta');
+    }
+  };
+
+  return (
+    <div className="w-full max-w-5xl mx-auto p-6 bg-white rounded-2xl border border-slate-100 shadow-md">
+      
+      {/* Banner de Lista de Espera */}
+      {solicitudEspera && (
+        <div className="mb-6">
+          <BannerEspera 
+            estado={solicitudEspera.estado} 
+            personasAdelante={solicitudEspera.personasAdelante}
+            onCancelar={handleCancelarEspera}
+            onAceptar={() => handleResponderNotificacion(true)}
+            onRechazar={() => handleResponderNotificacion(false)}
+            cargando={cargandoCancelacion}
           />
         </div>
+      )}
 
+      {/* Selector de Modalidad */}
+      <div className="mb-2">
+        <SelectorModalidad 
+          modalidad={modalidad} 
+          onChangeModalidad={(mod) => {
+            setModalidad(mod);
+            resetSeleccion(); 
+          }} 
+        />
+      </div>
+
+      {/* DISEÑO REFRACTORIZADO: Grilla equilibrada 7 a 5 para simetría total */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start mt-4">
         
-        <div className="flex flex-col h-full min-h-[380px]">
+        {/* COLUMNA IZQUIERDA: Calendario (Ocupa 7/12 del espacio) */}
+        <div className="lg:col-span-7 bg-slate-50/40 rounded-2xl p-5 border border-slate-100 flex items-center justify-center w-full">
+          <div className="w-full flex justify-center">
+            <GrillaCalendario 
+              modalidad={modalidad} 
+              mesActual={mesActual}
+              anioActual={anioActual}
+              diasSeleccionados={diasSeleccionados} 
+              setDiasSeleccionados={setDiasSeleccionados} 
+              diasConCupo={diasConCupo}
+              diasLlenos={diasLlenos}
+              cargandoDias={cargandoDias}
+              mesAnterior={mesAnterior}
+              mesSiguiente={mesSiguiente}
+              setRangoSeleccionado={setRangoSeleccionado}
+              setActividadSeleccionada={setActividadSeleccionada}
+            />
+          </div>
+        </div>
+
+        {/* COLUMNA DERECHA: Paneles de Horarios/Actividades (Ocupa 5/12 del espacio) */}
+        <div className="lg:col-span-5 flex flex-col h-full min-h-[410px] bg-white rounded-2xl p-1 justify-between">
           {modalidad === 'UNICO' ? (
              <PanelHorarios 
                diaSeleccionado={diaPrincipal} 
@@ -324,10 +489,12 @@ export default function ReservaTurnos() {
                setRangoSeleccionado={setRangoSeleccionado}
                actividadSeleccionada={actividadSeleccionada}
                setActividadSeleccionada={setActividadSeleccionada}
-              handleConfirmarTurno={handleConfirmarTurno}
-              adminMode={esAdmin}
-              adminEmail={adminEmail}
-              setAdminEmail={setAdminEmail}
+               handleConfirmarTurno={handleConfirmarTurno} 
+               handleAnotarEnEspera={handleAnotarEnEspera}
+               handleNotificarApertura={handleNotificarApertura}
+               adminMode={esAdmin}
+               adminEmail={adminEmail}
+               setAdminEmail={setAdminEmail}
              />
           ) : (
              <PanelMensual 
@@ -340,33 +507,38 @@ export default function ReservaTurnos() {
                 setRangoSeleccionado={setRangoSeleccionado}
                 actividadSeleccionada={actividadSeleccionada}
                 setActividadSeleccionada={setActividadSeleccionada}
-               handleConfirmarReservaFija={handleConfirmarReservaFija}
-               adminMode={esAdmin}
-               adminEmail={adminEmail}
-               setAdminEmail={setAdminEmail}
-            />
+                handleConfirmarReservaFija={handleConfirmarReservaFija}
+                adminMode={esAdmin}
+                adminEmail={adminEmail}
+                setAdminEmail={setAdminEmail}
+             />
           )}
         </div>
 
       </div>
-          {esperandoPago && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-8 text-center">
-                <div className="mx-auto mb-4 w-12 h-12 border-4 border-kine-blue border-t-transparent rounded-full animate-spin" />
-                <h2 className="text-xl font-bold text-slate-800 mb-2">Esperando confirmación del pago…</h2>
-                <p className="text-slate-600 mb-4">
-                  Completá el pago en la pestaña de MercadoPago que se abrió.
-                </p>
-                <p className="text-xs text-slate-400">No cierres esta ventana, vamos a confirmar tu reserva automáticamente.</p>
-                <button
-                  onClick={handleCancelarPago}
-                  className="mt-6 text-sm text-red-600 hover:underline"
-                >
-                  Cancelar pago
-                </button>
-              </div>
-            </div>
-          )}
+
+      {/* OVERLAY: Pantalla de espera de confirmación de MercadoPago */}
+      {esperandoPago && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center border border-slate-100">
+            {/* Cambiado a border-teal-600 para consistencia de marca */}
+            <div className="mx-auto mb-5 w-12 h-12 border-4 border-teal-600 border-t-transparent rounded-full animate-spin" />
+            <h2 className="text-xl font-bold text-slate-800 mb-2">Esperando confirmación del pago…</h2>
+            <p className="text-sm text-slate-600 mb-4">
+              Completá el pago en la pestaña de MercadoPago que se abrió.
+            </p>
+            <p className="text-xs text-slate-400 bg-slate-50 p-3 rounded-xl border border-slate-100">
+              No cierres esta ventana, vamos a confirmar tu reserva automáticamente al recibir el aviso de MercadoPago.
+            </p>
+            <button
+              onClick={handleCancelarPago}
+              className="mt-6 text-sm font-semibold text-red-500 hover:text-red-600 transition-colors cursor-pointer"
+            >
+              Cancelar proceso de pago
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

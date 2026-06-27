@@ -247,7 +247,8 @@ export class TurnosService {
     });
   }
 
-  async obtenerDiasDeTurnosDisponilbles(mes: number, anio: number): Promise<number[]> {
+  // Fijate que ahora devuelve un objeto con los dos arrays
+async obtenerDiasDeTurnosDisponilbles(mes: number, anio: number): Promise<{ diasConCupo: number[], diasLlenos: number[] }> {
   
   const primerDia = new Date(Date.UTC(anio, mes - 1, 1));
   const primerDiaSiguienteMes = new Date(Date.UTC(anio, mes, 1));
@@ -255,8 +256,8 @@ export class TurnosService {
   const turnosDelMes = await this.prisma.turno.findMany({
     where: {
       fecha: {
-        gte: primerDia,             // Mayor o igual al día 1 del mes
-        lt: primerDiaSiguienteMes,  // Menor estricto al día 1 del mes siguiente
+        gte: primerDia,
+        lt: primerDiaSiguienteMes,
       },
     },
     select: {
@@ -266,11 +267,36 @@ export class TurnosService {
     },
   });
 
-  const diasConCupo = turnosDelMes
-    .filter(turno => turno.capacidad > turno.cantidad_inscriptos)
-    .map(turno => turno.fecha.getUTCDate()); 
+  // Usamos Sets para asegurarnos de que no haya días duplicados
+  const diasConCupoSet = new Set<number>();
+  const diasLlenosSet = new Set<number>();
 
-  const diasUnicos = [...new Set(diasConCupo)];
-  return diasUnicos.sort((a, b) => a - b);
+  // 1. Agrupamos los turnos por día
+  const turnosPorDia = new Map<number, any[]>();
+  for (const turno of turnosDelMes) {
+    const dia = turno.fecha.getUTCDate();
+    if (!turnosPorDia.has(dia)) {
+      turnosPorDia.set(dia, []);
+    }
+    turnosPorDia.get(dia)!.push(turno);
+  }
+
+  // 2. Evaluamos cada día para ver si le queda al menos un lugar
+  for (const [dia, turnos] of turnosPorDia.entries()) {
+    // Si AL MENOS UN turno de este día tiene lugar, el día tiene cupo
+    const tieneLugar = turnos.some(t => t.capacidad > t.cantidad_inscriptos);
+    
+    if (tieneLugar) {
+      diasConCupoSet.add(dia);
+    } else {
+      diasLlenosSet.add(dia);
+    }
+  }
+
+  // 3. Convertimos los Sets a Arrays y los ordenamos
+  return {
+    diasConCupo: Array.from(diasConCupoSet).sort((a, b) => a - b),
+    diasLlenos: Array.from(diasLlenosSet).sort((a, b) => a - b),
+  };
 }
 }
