@@ -456,7 +456,7 @@ export class PagosService {
     await this.notificacionesService.crearNotificacion({
       pacienteId: reserva.paciente_id,
       reservaId: reserva.id,
-      titulo: 'Recordatorio de turno confirmado',
+      titulo: 'Recordatorio de turno',
       descripcion: `Recordatorio de turno confirmado para la actividad ${turno.tipoActividad.nombre} el día ${fechaStr} a las ${horaStr}hs.`,
       tipo: 'RECORDATORIO',
       canal: 'EMAIL',

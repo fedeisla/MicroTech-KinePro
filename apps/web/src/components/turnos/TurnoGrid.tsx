@@ -170,7 +170,162 @@ export default function TurnoGrid({ fecha, turnos, loading, onTurnosActualizados
 function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: TurnoDetalle; fecha: string | null; onReservaCreada?: () => Promise<void> }) {
   const { rol } = useAuth()
   const esAdmin = rol === 'ADMIN' || rol === 'OWNER'
-  const [tabActiva, setTabActiva] = useState<'INSCRIPTOS' | 'ESPERA'>('INSCRIPTOS')
+  const [email, setEmail] = useState('')
+  const [tipoReserva, setTipoReserva] = useState<'unico' | 'fijo'>('unico')
+  const [fechaFin, setFechaFin] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [reprogramarReservaId, setReprogramarReservaId] = useState<number | null>(null)
+  const [cancelarReservaId, setCancelarReservaId] = useState<number | null>(null)
+  const [cancelando, setCancelando] = useState(false)
+  const [metodoPago, setMetodoPago] = useState<'EFECTIVO' | 'TARJETA' | ''>('')
+  const [pacientes, setPacientes] = useState<PacienteOption[]>([])
+  const [aplicaDescuento, setAplicaDescuento] = useState(false)
+  const [errorDialog, setErrorDialog] = useState<{ titulo: string; mensaje: string } | null>(null)
+
+  useEffect(() => {
+    if (!esAdmin) return
+    obtenerPacientes()
+      .then((data) => setPacientes(data))
+      .catch((err) => {
+        toast.error('No se pudieron cargar los pacientes', { description: err.message })
+      })
+  }, [esAdmin])
+
+  useEffect(() => {
+    if (tipoReserva !== 'fijo' || !email) {
+      setAplicaDescuento(false)
+      return
+    }
+    chequearDescuento(email)
+      .then((res) => setAplicaDescuento(res.aplica))
+      .catch(() => setAplicaDescuento(false))
+  }, [email, tipoReserva])
+
+  if (detalle.inscriptos.length === 0 && !esAdmin) {
+    return <p className="text-xs text-neutral-gray">Sin inscriptos en este turno.</p>
+  }
+
+  const calcularFechasFixas = (fechaInicio: string, fechaFinStr: string): Date[] => {
+    const inicio = parseFechaLocal(fechaInicio)
+    const fin = parseFechaLocal(fechaFinStr)
+    if (fin < inicio) return []
+    return fechasMismoDiaSemana(inicio, fin)
+  }
+
+  const handleReservarPorEmail = async () => {
+    try {
+      if (!email) return toast.error('Seleccione un paciente')
+      if (!metodoPago) return toast.error('Debe seleccionar un método de pago para continuar')
+      setLoading(true)
+
+      // 1. Crear la reserva
+      const resReserva: any = await crearReservaPresencial(email, detalle.id)
+      const reservaId = resReserva?.reservaId ?? resReserva?.id
+
+      if (!reservaId) {
+        // Si el back no devolvió un id usable, igual avisamos
+        toast.success('Reserva registrada con éxito')
+        setEmail('')
+        setMetodoPago('')
+        if (onReservaCreada) await onReservaCreada()
+        return
+      }
+
+      // 2. Registrar el pago presencial asociado
+      try {
+        await registrarPago({ reserva_id: reservaId, metodo: metodoPago as 'EFECTIVO' | 'TARJETA' })
+        toast.success('Turno registrado con éxito')
+      } catch (pagoErr: any) {
+        toast.error('No se pudo registrar el turno', { description: pagoErr.message || String(pagoErr) })
+      }
+
+      setEmail('')
+      setMetodoPago('')
+      if (onReservaCreada) await onReservaCreada()
+    } catch (err: any) {
+      toast.error('No se pudo crear la reserva', { description: err.message || String(err) })
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+
+  const handleCancelarConfirmado = async () => {
+    if (!cancelarReservaId) return
+    setCancelando(true)
+    try {
+      const res = await cancelarReservaPresencial(cancelarReservaId)
+      toast.success(res.message)
+      setCancelarReservaId(null)
+      if (onReservaCreada) await onReservaCreada()
+    } catch (err: any) {
+      const detalle = err?.message ?? 'Ocurrió un error inesperado. Intentá de nuevo.'
+      const parsed = tituloYMensajeDesdeApi(detalle)
+      setCancelarReservaId(null)
+      setErrorDialog({
+        titulo: parsed.mensaje ? parsed.titulo : 'No se pudo cancelar el turno',
+        mensaje: parsed.mensaje || detalle,
+      })
+    } finally {
+      setCancelando(false)
+    }
+  }
+
+  const handleReservarFijosPorEmail = async () => {
+    try {
+      if (!email) return toast.error('Seleccione un paciente')
+      if (!metodoPago) return toast.error('Debe seleccionar un método de pago para continuar')
+      if (!fechaFin) return toast.error('Ingrese la fecha de fin')
+      if (!fecha) return toast.error('No se pudo obtener la fecha del turno')
+
+      setLoading(true)
+      const fechas = calcularFechasFixas(fecha, fechaFin)
+      if (fechas.length === 0) {
+        return toast.error('La fecha de fin debe ser igual o posterior al turno seleccionado')
+      }
+
+      // 1. Crear las reservas fijas (el back las asocia al paciente del email seleccionado)
+      const respuesta: any = await crearReservaFijaPresencial(email, detalle.id, fechas)
+      toast.success(respuesta.message)
+
+      // 2. Registrar el pago de cada reserva creada
+      const reservaIds: number[] = respuesta?.reservaIds ?? []
+      if (reservaIds.length > 0) {
+        // Calculamos el monto por reserva (con descuento aplicado si corresponde)
+        const precioUnitario = detalle.precio ?? 0
+        const montoPorReserva = aplicaDescuento ? precioUnitario * 0.8 : precioUnitario
+      
+        let pagosOk = 0
+        let pagosFail = 0
+        for (const rid of reservaIds) {
+          try {
+            await registrarPago({
+              reserva_id: rid,
+              metodo: metodoPago as 'EFECTIVO' | 'TARJETA',
+              monto: montoPorReserva,
+            })
+            pagosOk++
+          } catch (e) {
+            pagosFail++
+          }
+        }
+        if (pagosFail === 0) {
+          toast.success(`Pagos registrados (${pagosOk})`)
+        } else {
+          toast.error(`Se registraron ${pagosOk} pagos, ${pagosFail} fallaron`)
+        }
+      }
+
+      setEmail('')
+      setMetodoPago('')
+      setFechaFin('')
+      if (onReservaCreada) await onReservaCreada()
+    } catch (err: any) {
+      toast.error('No se pudieron crear las reservas', { description: err.message || String(err) })
+    } finally {
+      setLoading(false)
+    }
+  }
   const [email, setEmail] = useState('')
   const [tipoReserva, setTipoReserva] = useState<'unico' | 'fijo'>('unico')
   const [fechaFin, setFechaFin] = useState('')
