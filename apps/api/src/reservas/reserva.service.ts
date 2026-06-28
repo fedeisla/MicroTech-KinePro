@@ -656,7 +656,7 @@ export class ReservaService {
           nuevoTurno.tipoActividad?.nombre ?? '',
           paciente.usuario.email,
         );
-        const tituloR = `Recordatorio de turno confirmado`;
+        const tituloR = `Recordatorio de turno`;
         const descripcionR = `Recordatorio de turno confirmado para la actividad el día ${fechaNuevaStr} a las ${horaNuevaStr}hs.`;
         const enviarRecordatorioAhora = fechaEnvioRecordatorio.getTime() <= Date.now();
         await this.notificacionesService.crearNotificacion({
