@@ -13,7 +13,7 @@ export class NotificacionesController {
     if (!user) return [];
     if (user.rol !== 'PACIENTE') return [];
     const pacienteId = user.pacienteId;
-    return this.notificacionesService.obtenerUltimasDelPaciente(pacienteId, 4);
+    return this.notificacionesService.obtenerUltimasDelPaciente(pacienteId, 5);
   }
 
   @Patch('marcar-leidas')

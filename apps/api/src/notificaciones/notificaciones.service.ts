@@ -17,12 +17,11 @@ export class NotificacionesService {
     }, 1000 * 60 * 10); // cada 10 minutos
   }
 
-  async obtenerUltimasDelPaciente(pacienteId: number, limit = 4) {
+  async obtenerUltimasDelPaciente(pacienteId: number, limit = 5) {
     const now = new Date();
     const notis: any[] = await (this.prisma.notificacion.findMany as any)({
       where: {
         paciente_id: pacienteId,
-        estado: 'ENVIADA',
         fecha_envio: { lte: now },
       },
       orderBy: [

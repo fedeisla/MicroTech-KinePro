@@ -31,17 +31,26 @@ export default function NotificacionesDropdown() {
     }
   };
 
+  const fetchNotis = async () => {
+    try {
+      const data = await apiFetch<any[]>('/notificaciones');
+      setNotificaciones(data.slice(0, 5));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Obtener notificaciones al montar para mostrar el contador incluso sin abrir el dropdown
+  useEffect(() => {
+    fetchNotis();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Refrescar al abrir el dropdown
   useEffect(() => {
     if (!isOpen) return;
-    const fetchNotis = async () => {
-      try {
-        const data = await apiFetch<any[]>('/notificaciones');
-        setNotificaciones(data.slice(0, 4));
-      } catch (err) {
-        console.error(err);
-      }
-    };
     fetchNotis();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   const obtenerIconoTipo = (tipo: string) => {
