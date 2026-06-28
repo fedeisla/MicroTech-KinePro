@@ -163,43 +163,6 @@ export class ReservaService {
         // Acá iría la lógica del pago...
       });
 
-      // Crear notificación inmediata de confirmación y enviar email
-      const turnoConfirmado = await this.prisma.turno.findUnique({ where: { id: createReservaDto.turno_id } , include: { tipoActividad: true }});
-      const usuario = await this.prisma.paciente.findUnique({ where: { id: pacienteId }, include: { usuario: true } });
-      if (turnoConfirmado && usuario && usuario.usuario && nuevaReserva) {
-        const fechaTurno = new Date(Date.UTC(turnoConfirmado.fecha.getUTCFullYear(), turnoConfirmado.fecha.getUTCMonth(), turnoConfirmado.fecha.getUTCDate(), turnoConfirmado.hora_inicio.getUTCHours(), turnoConfirmado.hora_inicio.getUTCMinutes()));
-        const fechaStr = fechaTurno.toLocaleDateString('es-AR');
-        const horaStr = turnoConfirmado.hora_inicio.getUTCHours().toString().padStart(2,'0')+':'+turnoConfirmado.hora_inicio.getUTCMinutes().toString().padStart(2,'0');
-        const titulo = `Turno confirmado`;
-        const descripcion = `Su turno para la actividad ${turnoConfirmado.tipoActividad.nombre} ha sido confirmado para el día ${fechaStr} a las ${horaStr}hs.`;
-        await this.notificacionesService.crearNotificacion({
-          pacienteId,
-          reservaId: nuevaReserva.id,
-          titulo,
-          descripcion,
-          tipo: 'INFORMATIVA',
-          canal: 'EMAIL',
-          enviarEmail: true,
-          email: usuario.usuario.email,
-        });
-
-        // Crear recordatorio programado 24 horas antes
-        const fechaEnvioRecordatorio = new Date(fechaTurno.getTime() - 24 * 60 * 60 * 1000);
-        const tituloR = `Recordatorio de turno confirmado`;
-        const descripcionR = `Recordatorio de turno confirmado para la actividad ${turnoConfirmado.tipoActividad.nombre} el día ${fechaStr} a las ${horaStr}hs.`;
-        const enviarRecordatorioAhora = fechaEnvioRecordatorio.getTime() <= Date.now();
-        await this.notificacionesService.crearNotificacion({
-          pacienteId,
-          reservaId: nuevaReserva.id,
-          titulo: tituloR,
-          descripcion: descripcionR,
-          tipo: 'RECORDATORIO',
-          canal: 'EMAIL',
-          fechaEnvio: enviarRecordatorioAhora ? new Date() : fechaEnvioRecordatorio,
-          enviarEmail: enviarRecordatorioAhora,
-          email: usuario.usuario.email,
-        });
-      }
       return {
         message: 'Reserva pendiente de pago',
         reservaId: nuevaReserva!.id,
