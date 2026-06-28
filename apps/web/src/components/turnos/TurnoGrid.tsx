@@ -249,9 +249,9 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
       // 2. Registrar el pago presencial asociado
       try {
         await registrarPago({ reserva_id: reservaId, metodo: metodoPago as 'EFECTIVO' | 'TARJETA' })
-        toast.success('Pago registrado con éxito')
+        toast.success('Turno registrado con éxito')
       } catch (pagoErr: any) {
-        toast.error('No se pudo registrar el pago', { description: pagoErr.message || String(pagoErr) })
+        toast.error('No se pudo registrar el turno', { description: pagoErr.message || String(pagoErr) })
       }
 
       setEmail('')
