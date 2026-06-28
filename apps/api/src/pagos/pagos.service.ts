@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service'
+import { NotificacionesService } from '@/notificaciones/notificaciones.service'
 import { CrearPagoDto } from './pagos.dto'
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago'
 
@@ -12,6 +13,7 @@ export class PagosService {
   constructor(
     private prisma: PrismaService,
     private configService: ConfigService,
+    private notificacionesService: NotificacionesService,
   ) {
     const accessToken = this.configService.get<string>('MERCADOPAGO_ACCESS_TOKEN')
     if (!accessToken) {
@@ -159,6 +161,7 @@ export class PagosService {
           data: { estado: 'CONFIRMADA' },
         })
       })
+      await this.crearNotificacionReservaConfirmada(reservaId)
       return { status: 'ok', message: 'Pago confirmado' }
     }
 
@@ -251,6 +254,7 @@ export class PagosService {
           data: { estado: 'CONFIRMADA' },
         })
       })
+      await this.crearNotificacionReservaConfirmada(reservaId)
       return { status: 'ok', message: 'Pago confirmado' }
     }
     
@@ -283,6 +287,53 @@ export class PagosService {
     }
     
     return { status: 'pendiente', message: 'Aún no se detectó pago aprobado' }
+  }
+
+  private async crearNotificacionReservaConfirmada(reservaId: number) {
+    const reserva = await this.prisma.reserva.findUnique({
+      where: { id: reservaId },
+      include: {
+        turno: { include: { tipoActividad: true } },
+        paciente: { include: { usuario: true } },
+      },
+    })
+    if (!reserva || !reserva.paciente?.usuario) return
+
+    const turno = reserva.turno
+    const fechaTurno = new Date(Date.UTC(
+      turno.fecha.getUTCFullYear(),
+      turno.fecha.getUTCMonth(),
+      turno.fecha.getUTCDate(),
+      turno.hora_inicio.getUTCHours(),
+      turno.hora_inicio.getUTCMinutes(),
+    ))
+    const fechaStr = fechaTurno.toLocaleDateString('es-AR')
+    const horaStr = turno.hora_inicio.getUTCHours().toString().padStart(2, '0') + ':' + turno.hora_inicio.getUTCMinutes().toString().padStart(2, '0')
+
+    await this.notificacionesService.crearNotificacion({
+      pacienteId: reserva.paciente_id,
+      reservaId: reserva.id,
+      titulo: 'Turno confirmado',
+      descripcion: `Su turno para la actividad ${turno.tipoActividad.nombre} ha sido confirmado para el día ${fechaStr} a las ${horaStr}hs.`,
+      tipo: 'INFORMATIVA',
+      canal: 'EMAIL',
+      enviarEmail: true,
+      email: reserva.paciente.usuario.email,
+    })
+
+    const fechaEnvioRecordatorio = new Date(fechaTurno.getTime() - 24 * 60 * 60 * 1000)
+    const enviarRecordatorioAhora = fechaEnvioRecordatorio.getTime() <= Date.now()
+    await this.notificacionesService.crearNotificacion({
+      pacienteId: reserva.paciente_id,
+      reservaId: reserva.id,
+      titulo: 'Recordatorio de turno confirmado',
+      descripcion: `Recordatorio de turno confirmado para la actividad ${turno.tipoActividad.nombre} el día ${fechaStr} a las ${horaStr}hs.`,
+      tipo: 'RECORDATORIO',
+      canal: 'EMAIL',
+      fechaEnvio: enviarRecordatorioAhora ? new Date() : fechaEnvioRecordatorio,
+      enviarEmail: enviarRecordatorioAhora,
+      email: reserva.paciente.usuario.email,
+    })
   }
 
   // ============================================================
@@ -459,6 +510,11 @@ export class PagosService {
           })
         }
       })
+      for (const p of pagosGrupo) {
+        if (p.reserva.estado !== 'CONFIRMADA') {
+          await this.crearNotificacionReservaConfirmada(p.reserva_id)
+        }
+      }
       return { status: 'ok', message: 'Pago confirmado' }
     }
 
