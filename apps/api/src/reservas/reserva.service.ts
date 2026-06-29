@@ -271,15 +271,8 @@ export class ReservaService {
         include: { usuario: true },
       });
 
-      if (paciente?.usuario) {
-        await this.crearNotificacionReservaCreada(
-          pacienteId,
-          nuevaReserva!.id,
-          turno,
-          actividad.nombre,
-          paciente.usuario.email,
-        );
-      }
+      // No emitir notificación aquí porque la reserva está en PENDIENTE
+      // La notificación se envía cuando se confirma el pago
 
       return {
         message: 'Reserva pendiente de pago',
@@ -893,17 +886,20 @@ export class ReservaService {
         include: { usuario: true },
       });
 
-      for (let index = 0; index < reservaIds.length; index += 1) {
-        const reservaId = reservaIds[index];
-        const turnoCreado = turnos[index];
-        if (paciente?.usuario && turnoCreado) {
-          await this.crearNotificacionReservaCreada(
-            pacienteId,
-            reservaId,
-            turnoCreado,
-            turnoBase.tipoActividad_id ? (await this.prisma.tipoActividad.findUnique({ where: { id: turnoBase.tipoActividad_id } }))?.nombre ?? 'actividad' : 'actividad',
-            paciente.usuario.email,
-          );
+      // Emitir notificaciones solo si la reserva fue creada en CONFIRMADA (presencial)
+      if (estadoInicial === EstadoReserva.CONFIRMADA && paciente?.usuario) {
+        for (let index = 0; index < reservaIds.length; index += 1) {
+          const reservaId = reservaIds[index];
+          const turnoCreado = turnos[index];
+          if (turnoCreado) {
+            await this.crearNotificacionReservaCreada(
+              pacienteId,
+              reservaId,
+              turnoCreado,
+              turnoBase.tipoActividad_id ? (await this.prisma.tipoActividad.findUnique({ where: { id: turnoBase.tipoActividad_id } }))?.nombre ?? 'actividad' : 'actividad',
+              paciente.usuario.email,
+            );
+          }
         }
       }
 
@@ -947,7 +943,60 @@ export class ReservaService {
       throw new BadRequestException('El email no corresponde a un usuario registrado');
     }
 
-    return this.create(createReservaDto, usuario.paciente.id);
+    // Para presencial, crear directamente en CONFIRMADA
+    const turno = await this.prisma.turno.findUnique({
+      where: { id: createReservaDto.turno_id },
+      include: { tipoActividad: true },
+    });
+
+    if (!turno) {
+      throw new BadRequestException('El turno especificado no existe');
+    }
+
+    try {
+      let nuevaReserva: any;
+      await this.prisma.$transaction(async (tx) => {
+        nuevaReserva = await tx.reserva.create({
+          data: {
+            estado: 'CONFIRMADA',
+            turno: {
+              connect: { id: createReservaDto.turno_id }
+            },
+            paciente: {
+              connect: { id: usuario.paciente!.id }
+            }
+          },
+        });
+
+        await tx.turno.update({
+          where: { id: createReservaDto.turno_id },
+          data: {
+            cantidad_inscriptos: { increment: 1 }
+          },
+        });
+      });
+
+      // Emitir notificación de confirmación para presencial
+      if (usuario.paciente) {
+        await this.crearNotificacionReservaCreada(
+          usuario.paciente.id,
+          nuevaReserva!.id,
+          turno,
+          turno.tipoActividad.nombre,
+          usuario.email,
+        );
+      }
+
+      return {
+        message: 'Reserva confirmada exitosamente',
+        reservaId: nuevaReserva!.id,
+      };
+    } catch (error) {
+      this.logger.error(`Error al procesar la reserva presencial: ${String(error)}`);
+      throw new InternalServerErrorException(
+        'Ocurrió un error inesperado al procesar la reserva.'
+      );
+    }
   }
 
   // Permite al personal administrativo u owner crear reservas fijas indicando el email del paciente
@@ -958,10 +1007,11 @@ export class ReservaService {
     });
 
     if (!usuario || !usuario.paciente) {
-      throw new BadRequestException('El email no corresponde a un usuario registrado');
+      throw new BadRequestException('El email no corresponde a un paciente registrado');
     }
 
-    return this.crearReservaFija(usuario.paciente.id, turnoInicialId, fechasString);
+    // Para presencial, crear directamente en CONFIRMADA
+    return this.crearReservaFija(usuario.paciente.id, turnoInicialId, fechasString, EstadoReserva.CONFIRMADA);
   }
 
   async chequearDescuento(email: string) {

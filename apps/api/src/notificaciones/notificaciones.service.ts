@@ -100,7 +100,6 @@ export class NotificacionesService {
     await this.prisma.notificacion.updateMany({
       where: {
         paciente_id: pacienteId,
-        estado: 'ENVIADA',
       } as any,
       data: { leida: true } as any,
     });
