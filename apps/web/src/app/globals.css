@@ -20,7 +20,7 @@
   --pure-white: #FFFFFF;
   --neutral-gray: #757575;
   --light-bg-gray: #F1F1F1;
-  --text-main: #1A1A1A; /* <-- Agregamos tu gris oscuro como variable oficial */
+  --text-main: #1A1A1A;   
 }
 
 /* Reglas globales unificadas usando las variables */

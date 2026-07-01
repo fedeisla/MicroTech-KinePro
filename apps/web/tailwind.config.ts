@@ -10,15 +10,23 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Acá agregamos la paleta de KinePro
-        'kine-blue': '#005C9C',
-        'kine-blue-light': '#99D5F2',
-        'kine-blue-deep': '#002D4C',
-        'pro-green': '#4AA54D',
-        'pro-green-light': '#A1DFA0',
-        'pro-green-deep': '#1B7C1E',
-        'teal-accent': '#29B6B6',
-        'light-bg': '#F1F1F1',
+        // --- LA PALETA NUEVA OFICIAL ---
+        'kineblue': 'var(--kine-blue)',
+        'kineblue-light': 'var(--kine-blue-light)',
+        'kineblue-deep': 'var(--kine-blue-deep)',
+        'progreen': 'var(--pro-green)',
+        'progreen-light': 'var(--pro-green-light)',
+        'progreen-deep': 'var(--pro-green-deep)',
+        'teal-accent': 'var(--teal-accent)',
+        'pure-white': 'var(--pure-white)',
+        'neutral-gray': 'var(--neutral-gray)',
+        'light-bg-gray': 'var(--light-bg-gray)',
+        'text-main': 'var(--text-main)',
+        
+        // --- COLORES "VIEJOS" PARA QUE NO SE ROMPA EL RESTO DE LA APP ---
+        'kine-blue': 'var(--kine-blue)',
+        'kine-blue-deep': 'var(--kine-blue-deep)',
+        'neutral-bg': '#F3F4F6', // Usamos este gris suave que es el estándar, si tu gris era otro podés cambiar el Hex acá
       },
     },
   },

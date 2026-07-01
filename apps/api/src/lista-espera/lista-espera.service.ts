@@ -10,18 +10,28 @@ export class ListaEsperaService {
 
 
   async obtenerEstadoPaciente(pacienteId: number) {
+  // 1. Buscamos solo la solicitud que esté activa (Pendiente o Notificada)
   const espera = await this.prisma.listaEspera.findFirst({
-    where: { paciente_id: pacienteId},
-    include: { turno: true } 
+    where: { 
+      paciente_id: pacienteId,
+      estado: {
+        in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO]
+      }
+    },
+    include: { turno: true },
+    orderBy: { fecha_anotacion: 'desc' } // Por si acaso, nos aseguramos de traer la última
   });
 
   if (!espera) return null;
 
-  // Cálculo de personas adelante
+  // 2. Cálculo de personas adelante (ignorando a los que ya expiraron o cancelaron)
   const personasAdelante = await this.prisma.listaEspera.count({
     where: {
       turno_id: espera.turno_id,
-      fecha_anotacion: { lt: espera.fecha_anotacion }
+      fecha_anotacion: { lt: espera.fecha_anotacion },
+      estado: {
+        in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO]
+      }
     }
   });
 
@@ -128,6 +138,65 @@ export class ListaEsperaService {
         estado: nuevaReserva.estado
       };
     });
+  }
+
+  async obtenerListaParaAdmin(turnoId: number) {
+  return await this.prisma.listaEspera.findMany({
+    where: { 
+      turno_id: turnoId,
+      // Solo mostramos los que están activos en la fila o siendo notificados
+      estado: { in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO] } 
+    },
+    include: {
+      paciente: {
+        include: { usuario: true } // Para tener el nombre y mail
+      }
+    },
+    orderBy: [
+      { prioridad: 'asc' },      // Primero prioridad 1, luego 2
+      { fecha_anotacion: 'asc' } // A igual prioridad, el que llegó primero
+    ]
+  });
+}
+
+// ====================================================================
+  // ─── MÉTODOS EXCLUSIVOS PARA ADMINISTRADOR ──────────────────────────
+  // ====================================================================
+
+  async cancelarEsperaAdmin(id: number) {
+    // 1. Verificamos que el registro exista
+    const espera = await this.prisma.listaEspera.findUnique({ 
+      where: { id } 
+    });
+    
+    if (!espera) {
+      throw new NotFoundException(`El registro de espera #${id} no existe.`);
+    }
+    // 2. A diferencia del paciente, el admin puede cancelar forzosamente
+    // sin importar si estaba PENDIENTE o NOTIFICADO
+    return await this.prisma.listaEspera.update({
+      where: { id },
+      data: { estado: EstadoListaEspera.CANCELADO }
+    });
+  }
+
+  async inscribirPorEmail(turnoId: number, email: string, prioridad: number) {
+    // 1. Buscamos al paciente basándonos en el email de su usuario vinculado
+    const paciente = await this.prisma.paciente.findFirst({
+      where: { 
+        usuario: { 
+          email: email 
+        } 
+      }
+    });
+
+    if (!paciente) {
+      throw new NotFoundException(`No se encontró un paciente registrado con el email: ${email}`);
+    }
+
+    // 2. Reutilizamos tu método principal, así mantenemos las mismas 
+    // validaciones de capacidad límite y duplicados que ya programaste muy bien arriba
+    return this.inscribirPaciente(turnoId, paciente.id, prioridad);
   }
   
 }

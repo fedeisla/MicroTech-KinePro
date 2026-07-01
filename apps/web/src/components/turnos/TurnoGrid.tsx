@@ -1,22 +1,14 @@
- 'use client'
+'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { toast } from 'sonner'
-import {
-  crearReservaPresencial,
-  crearReservaFijaPresencial,
-  cancelarReservaPresencial,
-  chequearDescuento,
-} from '@/services/reservasService'
-import ReprogramarReservaModal from '@/components/turnos/ReprogramarReservaModal'
-import InfoDialog, { tituloYMensajeDesdeApi } from '@/app/Components/InfoDialog'
-import { fechasMismoDiaSemana, parseFechaLocal } from '@/lib/fechas'
 import { ChevronDown } from 'lucide-react'
 import type { TurnoResumen, TurnoDetalle, EstadoTurno } from '@/types/turno'
 import { getTurnoById } from '@/services/turnosService'
-import { registrarPago } from '@/services/pagosService'
-import { obtenerPacientes } from '@/services/usuariosService'
+import TabInscriptos from './TabInscriptos'
+import TabEspera from './TabEspera'
+
+
 
 interface TurnoGridProps {
   fecha: string | null
@@ -35,13 +27,6 @@ const ESTADO_LABEL: Record<EstadoTurno, string> = {
   DISPONIBLE: 'Disponible',
   RESERVADO:  'Reservado',
   CANCELADO:  'Cancelado',
-}
-
-type PacienteOption = {
-  id: number
-  nombre: string
-  apellido: string
-  email: string
 }
 
 function formatFecha(isoDate: string): string {
@@ -185,6 +170,7 @@ export default function TurnoGrid({ fecha, turnos, loading, onTurnosActualizados
 function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: TurnoDetalle; fecha: string | null; onReservaCreada?: () => Promise<void> }) {
   const { rol } = useAuth()
   const esAdmin = rol === 'ADMIN' || rol === 'OWNER'
+  const [tabActiva, setTabActiva] = useState<'INSCRIPTOS' | 'ESPERA'>('INSCRIPTOS')
   const [email, setEmail] = useState('')
   const [tipoReserva, setTipoReserva] = useState<'unico' | 'fijo'>('unico')
   const [fechaFin, setFechaFin] = useState('')
@@ -353,78 +339,8 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
   }
 
   return (
-    <div className="space-y-2">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-gray mb-3">
-        Inscriptos — {detalle.reservasActuales} / {detalle.capacidad}
-      </p>
-      {detalle.inscriptos.map((p) => (
-        <div key={p.id} className="rounded-lg border border-neutral-bg bg-white px-3 py-2 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm font-medium text-gray-800">
-            {p.nombre} {p.apellido}
-            {p.email ? <span className="text-slate-500 font-normal"> ({p.email})</span> : null}
-          </span>
-          {esAdmin && p.estado !== 'CANCELADA' && (
-            <div className="flex gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setReprogramarReservaId(p.id)}
-                className="px-2.5 py-1 text-xs font-semibold rounded-md border border-kineblue/30 text-kineblue hover:bg-kineblue/5"
-              >
-                Reprogramar
-              </button>
-              <button
-                type="button"
-                onClick={() => setCancelarReservaId(p.id)}
-                className="px-2.5 py-1 text-xs font-semibold rounded-md border border-red-200 text-red-700 hover:bg-red-50"
-              >
-                Cancelar turno
-              </button>
-            </div>
-          )}
-        </div>
-      ))}
-
-      <ReprogramarReservaModal
-        abierto={reprogramarReservaId !== null}
-        reservaId={reprogramarReservaId}
-        fechaActual={fecha}
-        tipoActividadId={detalle.tipoActividadId ?? null}
-        actividadNombre={detalle.actividad}
-        presencial
-        onClose={() => setReprogramarReservaId(null)}
-        onReprogramado={() => {
-          setReprogramarReservaId(null)
-          void onReservaCreada?.()
-        }}
-      />
-
-      {cancelarReservaId !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => !cancelando && setCancelarReservaId(null)}>
-          <div className="relative w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-slate-800">Cancelar turno</h3>
-            <p className="mt-1 text-sm text-slate-500">¿Confirmás que querés cancelar este turno del paciente?</p>
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                type="button"
-                disabled={cancelando}
-                onClick={() => setCancelarReservaId(null)}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
-              >
-                Volver
-              </button>
-              <button
-                type="button"
-                disabled={cancelando}
-                onClick={handleCancelarConfirmado}
-                className="px-4 py-2 rounded-lg text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                Confirmar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
+    <div className="space-y-4">
+      {/* --- BOTONERA DE TABS --- */}
       {esAdmin && (
         <div className="mt-3 border-t pt-3 space-y-2">
           
@@ -522,13 +438,25 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
         </div>
       )}
 
-      <InfoDialog
-        abierto={errorDialog !== null}
-        variante="error"
-        titulo={errorDialog?.titulo ?? ''}
-        mensaje={errorDialog?.mensaje}
-        onCerrar={() => setErrorDialog(null)}
-      />
+      {/* --- CONTENIDO DE LA PESTAÑA: INSCRIPTOS --- */}
+      {tabActiva === 'INSCRIPTOS' && (
+        <TabInscriptos 
+          detalle={detalle} 
+          fecha={fecha} 
+          esAdmin={esAdmin} 
+          onReservaCreada={onReservaCreada} 
+        />
+      )}
+
+      {/* --- CONTENIDO DE LA PESTAÑA: ESPERA --- */}
+      {tabActiva === 'ESPERA' && esAdmin && (
+        <TabEspera 
+          turnoId={detalle.id} 
+          onActualizarTurno={async () => {
+            if (onReservaCreada) await onReservaCreada()
+          }} 
+        />
+      )}
     </div>
   )
 }
