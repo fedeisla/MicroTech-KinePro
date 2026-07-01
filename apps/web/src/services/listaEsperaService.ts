@@ -5,9 +5,13 @@ export interface InscribirData {
   prioridad: number;
 }
 
+export interface InscribirFijoData {
+  turnoIds: number[];
+}
+
 export const listaEsperaService = {
   
-  // POST: Inscribir paciente (Para el usuario final)
+  // POST: Inscribir paciente (Para el usuario final - Individual)
   inscribir: async (data: InscribirData) => {
     return apiFetch('/lista-espera/inscribir', { 
       method: 'POST', 
@@ -15,7 +19,26 @@ export const listaEsperaService = {
     });
   },
 
-  // DELETE: Cancelar solicitud (Para el usuario final)
+
+  // POST: Inscripción fija para usuario logueado
+  inscribirTurnoFijoVirtual: async (turnoIds: number[]) => {
+    return apiFetch('/lista-espera/admin/inscribir-fijo', {
+      method: 'POST',
+      body: JSON.stringify({ turnoIds })
+    });
+  },
+
+  // POST: Inscripción fija para admin/presencial (vía email)
+  inscribirTurnoFijoPresencial: async (email: string, turnoIds: number[]) => {
+    return apiFetch('/lista-espera/fijo/presencial', {
+      method: 'POST',
+      body: JSON.stringify({ email, turnoIds })
+    });
+  },
+
+
+
+  // DELETE: Cancelar solicitud
   cancelar: async (id: number) => {
     return apiFetch(`/lista-espera/${id}`, { 
       method: 'DELETE' 
@@ -23,11 +46,11 @@ export const listaEsperaService = {
   },
 
   // PATCH: Responder a la notificación (Aceptar/Rechazar)
-  responderNotificacion: async ( id: number, acepta: boolean, turnoId: number ): Promise<{ message?: string; reservaId?: number; estado?: string }> => { 
-          return apiFetch(`/lista-espera/${id}/responder`, {
-            method: 'PATCH',
-            body: JSON.stringify({ acepta, turnoId }),
-          });
+  responderNotificacion: async (id: number, acepta: boolean, turnoId: number): Promise<{ message?: string; reservaId?: number; estado?: string }> => { 
+    return apiFetch(`/lista-espera/${id}/responder`, {
+      method: 'PATCH',
+      body: JSON.stringify({ acepta, turnoId }),
+    });
   },
 
   // GET: Obtener estado del paciente logueado
@@ -51,12 +74,11 @@ export const listaEsperaService = {
     });
   },
 
-  // POST: Inscribe a un paciente por su email cuando el turno está lleno
+  // POST: Inscribe a un paciente por su email (Individual)
   inscribirAdmin: async (email: string, turnoId: number, prioridad: number) => {
     return apiFetch('/lista-espera/admin/inscribir', {
       method: 'POST',
       body: JSON.stringify({ email, turnoId, prioridad })
     });
   }
-
 };

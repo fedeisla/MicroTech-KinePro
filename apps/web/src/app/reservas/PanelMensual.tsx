@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { fechasMismoDiaSemana, formatearFechaLocal, parseFechaLocal } from '@/lib/fechas';
 import { toast } from 'sonner';
-import { crearPaciente } from '@/services/usuariosService';
-import { Clock, Loader2, CalendarDays, ClipboardList, CheckCircle2, ArrowRight, ArrowLeft, TicketPercent } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, AlertCircle, ClipboardList } from 'lucide-react';
 import { RangoHorarioBackend, Actividad } from '@/types/turno';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { getTurnoById } from '@/services/turnosService';
 import { chequearDescuento } from '@/services/reservasService';
+import { listaEsperaService } from '@/services/listaEsperaService';
 
 interface Props {
   mesActual: number;
   anioActual: number;
   diasSeleccionados: number[]; 
+  diasLlenos: number[];
   horariosDelDia: RangoHorarioBackend[];
   cargandoHorarios: boolean;
   rangoSeleccionado: RangoHorarioBackend | null;
@@ -26,22 +27,21 @@ interface Props {
 }
 
 export default function PanelMensual({
-  mesActual, anioActual, diasSeleccionados, horariosDelDia, cargandoHorarios,
+  mesActual, anioActual, diasSeleccionados, diasLlenos, horariosDelDia, cargandoHorarios,
   rangoSeleccionado, setRangoSeleccionado, actividadSeleccionada, setActividadSeleccionada,
-  handleConfirmarReservaFija
-  , adminMode = false, adminEmail = '', setAdminEmail
+  handleConfirmarReservaFija, adminMode = false, adminEmail = '', setAdminEmail
 }: Props) {
   
   const [[paso, direccion], setPasoConfig] = useState<[1 | 2, number]>([1, 0]);
   const [fechaHasta, setFechaHasta] = useState('');
-  const [precioUnitario, setPrecioUnitario] = useState<number>(0);
-  const [aplicaDescuento, setAplicaDescuento] = useState(false);
+  const [prioridadEspera, setPrioridadEspera] = useState<number>(2);
   const [porcentajeDescuento, setPorcentajeDescuento] = useState(0)
   const { usuario } = useAuth();
 
+  const estaLleno = actividadSeleccionada ? actividadSeleccionada.cuposDisponibles <= 0 : false;
+
   const calcularFechasFijas = () => {
     if (diasSeleccionados.length === 0 || !fechaHasta) return [];
-
     const primerDia = diasSeleccionados[0];
     const inicio = new Date(anioActual, mesActual, primerDia);
     const fin = parseFechaLocal(fechaHasta);
@@ -50,11 +50,23 @@ export default function PanelMensual({
 
   const fechasCalculadas = calcularFechasFijas();
 
-  useEffect(() => {
-    if (diasSeleccionados.length === 0) {
-      setFechaHasta('');
-      return;
+  const handleAgregarAListaEspera = async () => {
+    try {
+      const turnoIds = [actividadSeleccionada!.id]; 
+      if (adminMode) {
+        if (!adminEmail) return toast.error('Se requiere email del paciente');
+        await listaEsperaService.inscribirTurnoFijoPresencial(adminEmail, turnoIds);
+      } else {
+        await listaEsperaService.inscribirTurnoFijoVirtual(turnoIds);
+      }
+      toast.success('Solicitud agregada a la lista de espera');
+    } catch (err: any) {
+      toast.error('Error al agregar a lista de espera', { description: err.message });
     }
+  };
+
+  useEffect(() => {
+    if (diasSeleccionados.length === 0) { setFechaHasta(''); return; }
     const primerDia = diasSeleccionados[0];
     const ultimoDiaMes = new Date(anioActual, mesActual + 1, 0).getDate();
     const finSugerido = new Date(anioActual, mesActual, Math.min(primerDia + 21, ultimoDiaMes));
@@ -112,136 +124,63 @@ export default function PanelMensual({
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      {/* Barra de progreso verde */}
       <div className="flex items-center gap-2 mb-6">
-        <div className="flex-1 h-2 rounded-full bg-teal-600 transition-colors duration-500"></div>
-        <div className={`flex-1 h-2 rounded-full transition-colors duration-500 ${paso === 2 ? 'bg-teal-600' : 'bg-slate-200'}`}></div>
+        <div className="flex-1 h-2 rounded-full bg-teal-600"></div>
+        <div className={`flex-1 h-2 rounded-full ${paso === 2 ? 'bg-teal-600' : 'bg-slate-200'}`}></div>
       </div>
 
       <div className="relative flex-1">
-        <AnimatePresence mode="wait" custom={direccion}>
+        <AnimatePresence mode="wait">
           {paso === 1 && (
-            <motion.div
-              key="paso1"
-              custom={direccion}
-              variants={variantesAnimacion}
-              initial="entrar"
-              animate="centro"
-              exit="salir"
-              transition={{ duration: 0.3, ease: "easeInOut" }}
-              className="flex-1 flex flex-col absolute inset-0"
-            >
-              <h3 className="text-lg font-bold text-slate-800 mb-4">Paso 1: Día y horario fijo</h3>
+            <motion.div key="paso1" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 flex flex-col absolute inset-0">
+              <h3 className="text-lg font-bold text-slate-800 mb-4">Seleccionar horario</h3>
               
-              <div className="mb-6">
-                {diasSeleccionados.length === 0 ? (
-                  <div className="text-xs text-slate-400 bg-slate-50/60 rounded-2xl p-6 text-center border border-dashed border-slate-200 flex flex-col items-center justify-center gap-2 min-h-[120px]">
-                    <CalendarDays className="w-6 h-6 text-slate-300" />
-                    <span>Elegí el día inicial en el calendario para ver los horarios.</span>
-                  </div>
-                ) : (
-                  <>
-                    {horariosDelDia.length > 0 ? (
-                      <div className="grid grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
-                        {horariosDelDia.map((rango, idx) => (
-                          <button
-                            key={`rango-${idx}`}
-                            onClick={() => { setRangoSeleccionado(rango); setActividadSeleccionada(null); }}
-                            className={`py-2 px-3 text-center border text-xs rounded-xl font-semibold transition-all
-                              ${rangoSeleccionado?.desde === rango.desde ? 'border-teal-600 bg-teal-50 text-teal-700 ring-2 ring-teal-600/10' : 'border-slate-200 text-slate-600 hover:border-teal-600'}
-                            `}
-                          >
-                            {rango.desde} - {rango.hasta}
-                          </button>
-                        ))}
-                      </div>
-                    ) : !cargandoHorarios && (
-                      <div className="text-xs text-slate-500 text-center py-4">No hay horarios disponibles para este día.</div>
-                    )}
-                  </>
-                )}
+              <div className="grid grid-cols-2 gap-2 mb-4 max-h-[200px] overflow-y-auto pr-1">
+                {horariosDelDia.map((rango, idx) => {
+                  const isSelected = rangoSeleccionado?.desde === rango.desde;
+                  return (
+                    <button key={idx} onClick={() => { setRangoSeleccionado(rango); setActividadSeleccionada(null); }}
+                      className={`py-3 px-3 border text-xs rounded-xl font-semibold transition-all 
+                      ${isSelected ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 hover:border-amber-400'}`}>
+                      {rango.desde} - {rango.hasta}
+                    </button>
+                  );
+                })}
               </div>
 
               {rangoSeleccionado && (
-                <div>
-                  <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
-                    <ClipboardList className="w-4 h-4 text-teal-600" /> Actividad
-                  </h3>
-                  <div className="flex flex-col gap-2">
-                    {rangoSeleccionado.actividades.map((act) => (
-                      <button
-                        key={`act-${act.id}`}
-                        disabled={act.cuposDisponibles === 0}
-                        onClick={() => setActividadSeleccionada(act)}
-                        className={`text-left p-3 border rounded-xl text-sm transition-all flex justify-between items-center
-                          ${act.cuposDisponibles === 0 ? 'bg-slate-50 border-slate-100 text-slate-400' : actividadSeleccionada?.id === act.id ? 'border-teal-600 bg-teal-50 text-teal-800' : 'border-slate-200 hover:border-teal-400'}
-                        `}
-                      >
-                        <span className="font-semibold">{act.nombre}</span>
-                      </button>
-                    ))}
-                  </div>
+                <div className="mt-2">
+                  <h3 className="text-sm font-bold text-slate-800 mb-2 flex items-center gap-2"><ClipboardList className="w-4 h-4 text-slate-500" /> Actividades</h3>
+                  {rangoSeleccionado.actividades.map((act) => (
+                    <button key={act.id} onClick={() => setActividadSeleccionada(act)}
+                      className={`w-full text-left p-4 border rounded-xl text-sm mb-2 flex justify-between items-center transition-all
+                      ${actividadSeleccionada?.id === act.id ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-slate-200 hover:border-amber-400'}`}>
+                      <span className="font-semibold">{act.nombre}</span>
+                      {act.cuposDisponibles <= 0 && <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-1 rounded-full font-bold uppercase">Agotado</span>}
+                    </button>
+                  ))}
                 </div>
               )}
-
-              <div className="mt-auto pt-4 border-t border-slate-100">
-                <button
-                  onClick={handleSiguiente}
-                  disabled={diasSeleccionados.length === 0 || !rangoSeleccionado || !actividadSeleccionada}
-                  className={`w-full py-3 px-4 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2
-                    ${diasSeleccionados.length > 0 && rangoSeleccionado && actividadSeleccionada ? 'bg-slate-800 text-white hover:bg-slate-900 cursor-pointer' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}
-                  `}
-                >
-                  <span>Siguiente</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
+              
+              <button 
+                onClick={() => setPasoConfig([2, 1])} 
+                disabled={!actividadSeleccionada} 
+                className="w-full mt-auto py-3 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-colors disabled:bg-slate-200 disabled:text-slate-400"
+              >
+                Siguiente
+              </button>
             </motion.div>
           )}
 
           {paso === 2 && (
-            <motion.div
-              key="paso2"
-              custom={direccion}
-              variants={variantesAnimacion}
-              initial="entrar"
-              animate="centro"
-              exit="salir"
-              transition={{ duration: 0.3, ease: "easeInOut" }}
-              className="flex-1 flex flex-col absolute inset-0 overflow-y-auto pr-1"
-            >
-              <button onClick={handleVolver} className="text-sm text-slate-500 font-semibold flex items-center gap-1 mb-4 hover:text-slate-800 transition-colors w-fit">
-                <ArrowLeft className="w-4 h-4" /> Volver
-              </button>
+            <motion.div key="paso2" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 flex flex-col absolute inset-0 overflow-y-auto">
+              <button onClick={() => setPasoConfig([1, -1])} className="text-sm text-slate-500 mb-4 flex items-center gap-1 hover:text-slate-800"><ArrowLeft className="w-4 h-4" /> Volver</button>
               
-              <h3 className="text-lg font-bold text-slate-800 mb-4">Resumen de la reserva</h3>
-              
-              <div className="bg-teal-50 border border-teal-100 rounded-xl p-4 mb-4">
-                <p className="text-teal-800 font-semibold mb-1">{actividadSeleccionada?.nombre}</p>
-                <p className="text-teal-600 text-sm flex items-center gap-2">
-                  <Clock className="w-4 h-4" /> Las {fechasCalculadas.length} sesiones a las {rangoSeleccionado?.desde} hs
-                </p>
-              </div>
-
-              <div className="mb-4">
-                <label className="text-sm font-bold text-slate-700 mb-1 block">Hasta (última sesión)</label>
-                <input
-                  type="date"
-                  value={fechaHasta}
-                  onChange={(e) => setFechaHasta(e.target.value)}
-                  className="w-full p-2 border border-slate-200 rounded-lg text-sm mb-3"
-                />
-              </div>
-
-              <div className="mb-4">
-                <p className="text-sm font-bold text-slate-700 mb-2">
-                  Sesiones del mismo día ({fechasCalculadas.length} turnos):
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {fechasCalculadas.map((fecha, idx) => (
-                    <span key={idx} className="bg-slate-100 border border-slate-200 text-slate-700 text-xs px-2.5 py-1 rounded-lg font-semibold">
-                      {fecha.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}
-                    </span>
-                  ))}
+              {estaLleno ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+                  <p className="text-amber-800 font-bold text-sm mb-2 flex items-center gap-2"><AlertCircle className="w-4 h-4" /> ¡Turno sin cupos!</p>
+                  <p className="text-xs text-amber-700 mb-3">Estás seleccionando un horario completo. ¿Deseas unirte a la lista de espera?</p>
                 </div>
               </div>
 
@@ -289,17 +228,21 @@ export default function PanelMensual({
                   <input value={adminEmail} onChange={(e) => setAdminEmail?.(e.target.value)} placeholder="email@ejemplo.com" className="w-full p-2 border rounded-md text-sm mb-3" />
                 </div>
               )}
-              {adminMode && (
-                <RegisterInline adminEmail={adminEmail} setAdminEmail={setAdminEmail} />
-              )}
 
-              <button
-                onClick={() => handleConfirmarReservaFija(fechasCalculadas)}
-                disabled={fechasCalculadas.length === 0 || (adminMode && !adminEmail)}
-                className="w-full py-3 px-4 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 bg-teal-600 text-white hover:bg-teal-700 active:scale-[0.98] disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
+              <div className="mb-4">
+                <label className="text-xs font-bold text-slate-700 mb-1 block">Fecha límite de reserva</label>
+                <input type="date" disabled value={fechaHasta} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-600 cursor-not-allowed" />
+              </div>
+              
+              <button 
+                onClick={estaLleno ? handleAgregarAListaEspera : () => handleConfirmarReservaFija(fechasCalculadas)}
+                className={`w-full py-3 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 ${estaLleno ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-teal-600 text-white hover:bg-teal-700'}`}
               >
-                <CheckCircle2 className="w-5 h-5" />
-                <span>Confirmar {fechasCalculadas.length} turnos</span>
+                {estaLleno ? (
+                    <><AlertCircle className="w-4 h-4" /> Agregar a Lista de Espera</>
+                ) : (
+                    <><CheckCircle2 className="w-4 h-4" /> Confirmar Reserva</>
+                )}
               </button>
             </motion.div>
           )}
@@ -307,49 +250,4 @@ export default function PanelMensual({
       </div>
     </div>
   );
-}
-
-function RegisterInline({ adminEmail, setAdminEmail }: { adminEmail?: string; setAdminEmail?: (s: string) => void }) {
-  const [show, setShow] = useState(false);
-  const [nombre, setNombre] = useState('');
-  const [apellido, setApellido] = useState('');
-  const [dni, setDni] = useState('');
-  const [telefono, setTelefono] = useState('');
-  const [fechaNacimiento, setFechaNacimiento] = useState('');
-  const [password, setPassword] = useState('12345678');
-
-  const handleRegistrar = async () => {
-    try {
-      if (!adminEmail) return toast.error('Ingrese un email antes de registrar');
-      await crearPaciente({ nombre, apellido, dni, telefono, email: adminEmail, password, fechaNacimiento });
-      toast.success('Paciente registrado con éxito');
-      setShow(false);
-      setNombre(''); setApellido(''); setDni(''); setTelefono(''); setFechaNacimiento('');
-    } catch (err: any) {
-      toast.error('No se pudo registrar al paciente', { description: err.message || String(err) });
-    }
-  };
-
-  return (
-    <div>
-      <div className="flex gap-2">
-        <button onClick={() => setShow(s => !s)} className="px-3 py-1 rounded-md text-sm bg-slate-100 hover:bg-slate-200">{show ? 'Cancelar registro' : 'Registrar paciente'}</button>
-      </div>
-      {show && (
-        <div className="mt-3 bg-white border p-3 rounded-md">
-          <div className="grid grid-cols-2 gap-2">
-            <input placeholder="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} className="p-2 border rounded-md text-sm" />
-            <input placeholder="Apellido" value={apellido} onChange={(e) => setApellido(e.target.value)} className="p-2 border rounded-md text-sm" />
-            <input placeholder="DNI" value={dni} onChange={(e) => setDni(e.target.value)} className="p-2 border rounded-md text-sm" />
-            <input placeholder="Teléfono" value={telefono} onChange={(e) => setTelefono(e.target.value)} className="p-2 border rounded-md text-sm" />
-            <input placeholder="Fecha nacimiento (YYYY-MM-DD)" value={fechaNacimiento} onChange={(e) => setFechaNacimiento(e.target.value)} className="p-2 border rounded-md text-sm col-span-2" />
-            <input placeholder="Contraseña" value={password} onChange={(e) => setPassword(e.target.value)} className="p-2 border rounded-md text-sm col-span-2" />
-          </div>
-          <div className="mt-3 flex justify-end">
-            <button onClick={handleRegistrar} className="px-4 py-2 rounded-md bg-teal-600 text-white">Registrar</button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
 }

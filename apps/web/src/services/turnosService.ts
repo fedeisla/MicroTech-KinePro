@@ -101,35 +101,30 @@ export async function getTurnoById(id: number): Promise<TurnoDetalle> {
   }
 }
 export async function getHorariosTurnos(fecha: string): Promise<RangoHorarioBackend[]> {
-  
-
-  const turnosPlanos = await apiFetch<any[]>(`/turnos?fecha=${fecha}`,{ omitToken: true });
+ const turnosPlanos = await apiFetch<any[]>(`/turnos?fecha=${fecha}`, { omitToken: true });
   const turnosAgrupados = new Map<string, RangoHorarioBackend>();
 
   turnosPlanos.forEach((t) => {
-    if ( t.espacios_libres <= 0) return;
 
     const horaDesde = extractHora(t.hora_inicio);
 
-    // Si todavía no creamos el grupo para esta hora, lo inicializamos
     if (!turnosAgrupados.has(horaDesde)) {
       turnosAgrupados.set(horaDesde, {
-        idTurno: t.id,
+        idTurno: t.id, // Ojo: esto toma el id del primer turno que encuentra para este rango
         desde: horaDesde,
         hasta: calcularHoraHasta(horaDesde),
         actividades: [],
       });
     }
 
-    // Metemos la actividad adentro del grupo horario correspondiente
     turnosAgrupados.get(horaDesde)!.actividades.push({
       id: t.id,
       nombre: t.actividad,  
       cuposTotales: t.capacidad,
-      cuposDisponibles: t.espacios_libres,
+      // Si el cupo es negativo (por algún error de base de datos), forzamos a 0
+      cuposDisponibles: Math.max(0, t.espacios_libres), 
     });
   });
-
 
   return Array.from(turnosAgrupados.values());
  

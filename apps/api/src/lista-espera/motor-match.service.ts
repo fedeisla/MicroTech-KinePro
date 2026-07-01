@@ -8,7 +8,7 @@ import { TipoNotificacion } from '@prisma/client';
 
 @Injectable()
 export class MotorMatchService {
-  private readonly logger = new Logger(MotorMatchService.name);
+ private readonly logger = new Logger(MotorMatchService.name);
 
   constructor(
     private prisma: PrismaService,
@@ -19,49 +19,89 @@ export class MotorMatchService {
   @OnEvent('turno.liberado')
   async manejarTurnoLiberado(payload: { turnoId: number }) {
     this.logger.log(`Procesando match para el turno ID ${payload.turnoId}`);
-    
+
     const config = await this.prisma.configuracionSistema.findUnique({ where: { id: 1 } });
-    if (!config){
-      this.logger.warn(`🛑 ERROR SILENCIOSO: No existe ConfiguracionSistema con id 1 en la base de datos. El motor se detuvo.`);
-       return;
+    if (!config) {
+      this.logger.warn(`🛑 ERROR: No existe ConfiguracionSistema.`);
+      return;
     }
 
+    // Política de inanición: Si tocaRespiracion es true, buscamos Prioridad 2 (Demanda)
     const tocaRespiracion = config.contadorRespiracion >= 4;
     let candidato = await this.buscarSiguiente(payload.turnoId, tocaRespiracion ? 2 : 1);
-    
-    // Fallback si no hay de la prioridad buscada
+
+    // Fallback: Si no hay de la prioridad buscada, intentamos con la otra
     if (!candidato) {
       candidato = await this.buscarSiguiente(payload.turnoId, tocaRespiracion ? 1 : 2);
     }
 
-    if (candidato) {
+    if (!candidato) {
+      this.logger.warn(`No se encontró candidato para turno ${payload.turnoId}`);
+      return;
+    }
+
+    // --- LÓGICA DE ASIGNACIÓN ---
+    if (candidato.grupo_fijo_id) {
+      await this.procesarAsignacionBloque(candidato.grupo_fijo_id, config);
+    } else {
+      await this.procesarAsignacionIndividual(candidato, config);
+    }
+  }
+
+  // Lógica para asignar un BLOQUE (Turno Fijo)
+  private async procesarAsignacionBloque(grupoId: string, config: any) {
+    const bloque = await this.prisma.listaEspera.findMany({ 
+      where: { grupo_fijo_id: grupoId, estado: EstadoListaEspera.PENDIENTE },
+      include: { turno: true } 
+    });
+
+    // Validamos que TODOS los turnos del bloque sigan teniendo cupo disponible
+    const todosDisponibles = bloque.every(item => item.turno.cantidad_inscriptos < item.turno.capacidad);
+
+    if (todosDisponibles) {
       await this.prisma.$transaction(async (tx) => {
-        await tx.listaEspera.update({
-          where: { id: candidato.id },
+        // Notificamos a todos los del bloque
+        await tx.listaEspera.updateMany({
+          where: { grupo_fijo_id: grupoId },
           data: { estado: EstadoListaEspera.NOTIFICADO, fecha_notificacion: new Date() }
         });
 
-        const nuevoContador = candidato.prioridad === 1 ? config.contadorRespiracion + 1 : 0;
+        // Incrementamos contador de inanición (1 bloque = 1 unidad de progreso)
         await tx.configuracionSistema.update({
           where: { id: 1 },
-          data: { contadorRespiracion: nuevoContador }
+          data: { contadorRespiracion: { increment: 1 } }
         });
       });
-      this.logger.log(`Turno ofrecido al paciente ID ${candidato.paciente_id}. Corren las 12hs.`);
+      this.logger.log(`Bloque fijo ${grupoId} asignado correctamente.`);
+    } else {
+      this.logger.warn(`Bloque ${grupoId} no asignado: algunos turnos se llenaron.`);
     }
-    else
-      {
-        this.logger.warn(`🛑 ERROR SILENCIOSO: No encontro candidato: ${payload.turnoId}`);
-      }
+  }
+
+  // Lógica para asignar un INDIVIDUAL (Demanda)
+  private async procesarAsignacionIndividual(candidato: any, config: any) {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.listaEspera.update({
+        where: { id: candidato.id },
+        data: { estado: EstadoListaEspera.NOTIFICADO, fecha_notificacion: new Date() }
+      });
+
+      // Resetear contador si asignamos un "turno por demanda" (según tu lógica de respiración)
+      // O incrementar según política. Aquí reseteamos a 0 si es prioridad 2 (Demanda)
+      const nuevoContador = candidato.prioridad === 2 ? 0 : config.contadorRespiracion;
+      await tx.configuracionSistema.update({
+        where: { id: 1 },
+        data: { contadorRespiracion: nuevoContador }
+      });
+    });
+    this.logger.log(`Turno individual asignado a paciente ${candidato.paciente_id}.`);
   }
 
   private async buscarSiguiente(turnoId: number, prioridad: number) {
-     
     return await this.prisma.listaEspera.findFirst({
       where: { turno_id: turnoId, prioridad, estado: EstadoListaEspera.PENDIENTE },
       orderBy: { fecha_anotacion: 'asc' }
     });
-    
   }
 
   // para test CronExpression.EVERY_10_SECONDS
