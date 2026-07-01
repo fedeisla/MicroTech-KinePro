@@ -17,6 +17,7 @@ export class PagosService {
     private notificacionesService: NotificacionesService,
     private configuracionService: ConfiguracionService,
     private notificacionesService: NotificacionesService,
+    private configuracionService: ConfiguracionService,
   ) {
     const accessToken = this.configService.get<string>('MERCADOPAGO_ACCESS_TOKEN')
     if (!accessToken) {
@@ -514,7 +515,10 @@ export class PagosService {
     })
     const totalReprog = reservasConReprog.reduce((acc, c) => acc + c.cant_reprogramaciones, 0)
     const { porcentaje: porcentajeConfigurado } = await this.configuracionService.obtenerDescuento()
+    const { porcentaje: porcentajeConfigurado } = await this.configuracionService.obtenerDescuento()
     const aplicaDescuento = ausencias < 2 && totalReprog < 2
+    const factorDescuento = aplicaDescuento ? (100 - porcentajeConfigurado) / 100 : 1
+    const precioPorReserva = precioBase * factorDescuento
     const factorDescuento = aplicaDescuento ? (100 - porcentajeConfigurado) / 100 : 1
     const precioPorReserva = precioBase * factorDescuento
 
@@ -632,9 +636,11 @@ export class PagosService {
         })
         if (reservaSample && precioReserva < Number(reservaSample.turno.tipoActividad.precio)) {
           const { porcentaje: porcentajeConfigurado } = await this.configuracionService.obtenerDescuento()
+          const { porcentaje: porcentajeConfigurado } = await this.configuracionService.obtenerDescuento()
           await tx.descuento.create({
             data: {
               paciente_id: pacienteId,
+              porcentaje: porcentajeConfigurado,
               porcentaje: porcentajeConfigurado,
               motivo: 'Reserva de turnos fijos sin ausencias ni reprogramaciones',
               mes_aplicable: mesAplicable,

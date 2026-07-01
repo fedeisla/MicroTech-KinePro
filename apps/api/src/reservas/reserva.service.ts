@@ -8,6 +8,7 @@ import { EstadoReserva, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { ConfiguracionService } from '@/configuracion/configuracion.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { ConfiguracionService } from '@/configuracion/configuracion.service';
 
 @Injectable()
 export class ReservaService {

@@ -180,6 +180,7 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
   const [metodoPago, setMetodoPago] = useState<'EFECTIVO' | 'TARJETA' | ''>('')
   const [pacientes, setPacientes] = useState<PacienteOption[]>([])
   const [aplicaDescuento, setAplicaDescuento] = useState(false)
+  const [porcentajeDescuento, setPorcentajeDescuento] = useState(0)
   const [errorDialog, setErrorDialog] = useState<{ titulo: string; mensaje: string } | null>(null)
 
   useEffect(() => {
@@ -194,11 +195,18 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
   useEffect(() => {
     if (tipoReserva !== 'fijo' || !email) {
       setAplicaDescuento(false)
+      setPorcentajeDescuento(0)
       return
     }
     chequearDescuento(email)
-      .then((res) => setAplicaDescuento(res.aplica))
-      .catch(() => setAplicaDescuento(false))
+      .then((res) => {
+        setAplicaDescuento(res.aplica)
+        setPorcentajeDescuento(res.porcentaje)
+      })
+      .catch(() => {
+        setAplicaDescuento(false)
+        setPorcentajeDescuento(0)
+      })
   }, [email, tipoReserva])
 
   if (detalle.inscriptos.length === 0 && !esAdmin) {
@@ -292,9 +300,11 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
       const reservaIds: number[] = respuesta?.reservaIds ?? []
       if (reservaIds.length > 0) {
         // Calculamos el monto por reserva (con descuento aplicado si corresponde)
+        
         const precioUnitario = detalle.precio ?? 0
-        const montoPorReserva = aplicaDescuento ? precioUnitario * 0.8 : precioUnitario
-      
+        const factorDescuento = aplicaDescuento ? (100 - porcentajeDescuento) / 100 : 1
+        const montoPorReserva = precioUnitario * factorDescuento
+
         let pagosOk = 0
         let pagosFail = 0
         for (const rid of reservaIds) {
