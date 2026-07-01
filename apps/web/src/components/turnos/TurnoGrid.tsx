@@ -180,6 +180,7 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
   const [metodoPago, setMetodoPago] = useState<'EFECTIVO' | 'TARJETA' | ''>('')
   const [pacientes, setPacientes] = useState<PacienteOption[]>([])
   const [aplicaDescuento, setAplicaDescuento] = useState(false)
+  const [porcentajeDescuento, setPorcentajeDescuento] = useState(0)
   const [errorDialog, setErrorDialog] = useState<{ titulo: string; mensaje: string } | null>(null)
 
   useEffect(() => {
@@ -194,11 +195,18 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
   useEffect(() => {
     if (tipoReserva !== 'fijo' || !email) {
       setAplicaDescuento(false)
+      setPorcentajeDescuento(0)
       return
     }
     chequearDescuento(email)
-      .then((res) => setAplicaDescuento(res.aplica))
-      .catch(() => setAplicaDescuento(false))
+      .then((res) => {
+        setAplicaDescuento(res.aplica)
+        setPorcentajeDescuento(res.porcentaje)
+      })
+      .catch(() => {
+        setAplicaDescuento(false)
+        setPorcentajeDescuento(0)
+      })
   }, [email, tipoReserva])
 
   if (detalle.inscriptos.length === 0 && !esAdmin) {
@@ -292,9 +300,11 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
       const reservaIds: number[] = respuesta?.reservaIds ?? []
       if (reservaIds.length > 0) {
         // Calculamos el monto por reserva (con descuento aplicado si corresponde)
+        
         const precioUnitario = detalle.precio ?? 0
-        const montoPorReserva = aplicaDescuento ? precioUnitario * 0.8 : precioUnitario
-      
+        const factorDescuento = aplicaDescuento ? (100 - porcentajeDescuento) / 100 : 1
+        const montoPorReserva = precioUnitario * factorDescuento
+
         let pagosOk = 0
         let pagosFail = 0
         for (const rid of reservaIds) {
@@ -331,27 +341,99 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
     <div className="space-y-4">
       {/* --- BOTONERA DE TABS --- */}
       {esAdmin && (
-        <div className="flex border-b border-light-bg-gray mb-2">
-          <button
-            onClick={() => setTabActiva('INSCRIPTOS')}
-            className={`px-4 py-2 text-sm font-semibold tracking-wide border-b-2 transition-colors ${
-              tabActiva === 'INSCRIPTOS' 
-                ? 'border-kineblue text-kineblue' 
-                : 'border-transparent text-neutral-gray hover:text-text-main'
-            }`}
+        <div className="mt-3 border-t pt-3 space-y-2">
+          
+          <label className="text-xs text-slate-600 mb-1 block">Paciente</label>
+          <select
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full p-2 border rounded-md text-sm bg-white"
           >
-            INSCRIPTOS ({detalle.reservasActuales}/{detalle.capacidad})
-          </button>
-          <button
-            onClick={() => setTabActiva('ESPERA')}
-            className={`px-4 py-2 text-sm font-semibold tracking-wide border-b-2 transition-colors flex items-center gap-2 ${
-              tabActiva === 'ESPERA' 
-                ? 'border-progreen text-progreen-deep' 
-                : 'border-transparent text-neutral-gray hover:text-text-main'
-            }`}
+            <option value="">Seleccionar paciente</option>
+            {pacientes.map((p) => (
+              <option key={p.id} value={p.email}>
+                {p.nombre} {p.apellido}
+              </option>
+            ))}
+          </select>
+          
+          <label className="text-xs text-slate-600 mb-1 block mt-2">Método de pago</label>
+          <select
+            value={metodoPago}
+            onChange={(e) => setMetodoPago(e.target.value as 'EFECTIVO' | 'TARJETA' | '')}
+            className="w-full p-2 border rounded-md text-sm bg-white"
           >
-            LISTA DE ESPERA
-          </button>
+            <option value="">Seleccionar método</option>
+            <option value="EFECTIVO">Efectivo</option>
+            <option value="TARJETA">Posnet</option>
+          </select>
+          
+          {(() => {
+            const precioUnitario = detalle.precio ?? 0
+            const formatear = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                    
+            if (tipoReserva === 'unico') {
+              return (
+                <div className="mt-2 text-xs text-slate-600">
+                  Monto a abonar: <span className="font-bold text-slate-800">${formatear(precioUnitario)}</span>
+                </div>
+              )
+            }
+          
+            // Modalidad fijo
+            let cantidadTurnos = 0
+            if (fecha && fechaFin) {
+              cantidadTurnos = calcularFechasFixas(fecha, fechaFin).length
+            }
+          
+            const subtotal = precioUnitario * cantidadTurnos
+            const descuento = aplicaDescuento ? subtotal * (porcentajeDescuento / 100) : 0
+            const total = subtotal - descuento
+          
+            return (
+              <div className="mt-2 text-xs text-slate-600">
+                {cantidadTurnos > 0 ? (
+                  <>
+                    <div>Subtotal: <span className="font-semibold text-slate-700">${formatear(subtotal)}</span> <span className="text-slate-500">({cantidadTurnos} turnos × ${formatear(precioUnitario)})</span></div>
+                    {aplicaDescuento && (
+                      <div className="text-emerald-700">Descuento {porcentajeDescuento}%: -${formatear(descuento)}</div>
+                    )}
+                    <div className="mt-1">Total a cobrar: <span className="font-bold text-slate-800">${formatear(total)}</span></div>
+                    {!aplicaDescuento && email && (
+                      <div className="text-amber-700 mt-1">El paciente no califica para descuento (tiene ausencias o reprogramaciones).</div>
+                    )}
+                  </>
+                ) : (
+                  <>Monto total a abonar: <span className="font-bold text-slate-800">$-</span> <span className="text-slate-400">(ingresá una fecha de fin)</span></>
+                )}
+              </div>
+            )
+          })()}
+
+          <div className="flex gap-3">
+            <label className="flex items-center gap-2 text-xs cursor-pointer">
+              <input type="radio" name="tipo" value="unico" checked={tipoReserva === 'unico'} onChange={(e) => setTipoReserva('unico')} />
+              Turno único
+            </label>
+            <label className="flex items-center gap-2 text-xs cursor-pointer">
+              <input type="radio" name="tipo" value="fijo" checked={tipoReserva === 'fijo'} onChange={(e) => setTipoReserva('fijo')} />
+              Turnos fijos
+            </label>
+          </div>
+
+          {tipoReserva === 'unico' ? (
+            <button disabled={loading} onClick={handleReservarPorEmail} className="w-full px-3 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700">
+              Anotar
+            </button>
+          ) : (
+            <>
+              <label className="text-xs text-slate-600 block">Fecha de fin (YYYY-MM-DD)</label>
+              <input value={fechaFin} onChange={(e) => setFechaFin(e.target.value)} type="date" className="w-full p-2 border rounded-md text-sm" />
+              <button disabled={loading} onClick={handleReservarFijosPorEmail} className="w-full px-3 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700">
+                Anotar turnos fijos
+              </button>
+            </>
+          )}
         </div>
       )}
 

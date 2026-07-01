@@ -35,6 +35,7 @@ export default function PanelMensual({
   const [[paso, direccion], setPasoConfig] = useState<[1 | 2, number]>([1, 0]);
   const [fechaHasta, setFechaHasta] = useState('');
   const [prioridadEspera, setPrioridadEspera] = useState<number>(2);
+  const [porcentajeDescuento, setPorcentajeDescuento] = useState(0)
   const { usuario } = useAuth();
 
   const estaLleno = actividadSeleccionada ? actividadSeleccionada.cuposDisponibles <= 0 : false;
@@ -71,6 +72,55 @@ export default function PanelMensual({
     const finSugerido = new Date(anioActual, mesActual, Math.min(primerDia + 21, ultimoDiaMes));
     setFechaHasta(formatearFechaLocal(finSugerido));
   }, [diasSeleccionados, mesActual, anioActual]);
+
+  // Cargar el precio del turno cuando se selecciona la actividad
+  useEffect(() => {
+    if (!actividadSeleccionada) {
+      setPrecioUnitario(0);
+      return;
+    }
+    getTurnoById(actividadSeleccionada.id)
+      .then((t) => setPrecioUnitario(t.precio ?? 0))
+      .catch(() => setPrecioUnitario(0));
+  }, [actividadSeleccionada]);
+
+  // Chequear si el paciente califica para descuento
+  useEffect(() => {
+    const email = adminMode ? adminEmail : usuario?.email;
+    if (!email) {
+      setAplicaDescuento(false);
+      setPorcentajeDescuento(0);
+      return;
+    }
+    chequearDescuento(email)
+      .then((res) => {
+        setAplicaDescuento(res.aplica);
+        setPorcentajeDescuento(res.porcentaje);
+      })
+      .catch(() => {
+        setAplicaDescuento(false);
+        setPorcentajeDescuento(0);
+      });
+  }, [adminMode, adminEmail, usuario?.email]);
+
+
+  const handleSiguiente = () => setPasoConfig([2, 1]);
+  const handleVolver = () => setPasoConfig([1, -1]);
+
+  const variantesAnimacion = {
+    entrar: (direccion: number) => ({
+      x: direccion > 0 ? 50 : -50,
+      opacity: 0
+    }),
+    centro: {
+      x: 0,
+      opacity: 1
+    },
+    salir: (direccion: number) => ({
+      x: direccion > 0 ? -50 : 50,
+      opacity: 0
+    })
+  };
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -132,9 +182,50 @@ export default function PanelMensual({
                   <p className="text-amber-800 font-bold text-sm mb-2 flex items-center gap-2"><AlertCircle className="w-4 h-4" /> ¡Turno sin cupos!</p>
                   <p className="text-xs text-amber-700 mb-3">Estás seleccionando un horario completo. ¿Deseas unirte a la lista de espera?</p>
                 </div>
-              ) : (
-                <div className="bg-teal-50 p-4 rounded-xl mb-4 text-sm font-semibold text-teal-800 flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" /> {actividadSeleccionada?.nombre}
+              </div>
+
+              {/* Desglose dinámico de precio */}
+              {precioUnitario > 0 && fechasCalculadas.length > 0 ? (() => {
+                const formatear = (n: number) =>
+                  n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                const subtotal = precioUnitario * fechasCalculadas.length;
+                const descuento = aplicaDescuento ? subtotal * (porcentajeDescuento / 100) : 0;
+                const total = subtotal - descuento;
+                return (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mt-auto mb-6 shadow-sm">
+                    <div className="text-sm space-y-1">
+                      <div className="flex justify-between text-slate-600">
+                        <span>Subtotal ({fechasCalculadas.length} × ${formatear(precioUnitario)})</span>
+                        <span className="font-semibold">${formatear(subtotal)}</span>
+                      </div>
+                      {aplicaDescuento && (
+                        <div className="flex justify-between text-emerald-700">
+                          <span className="flex items-center gap-1">
+                            <TicketPercent className="w-4 h-4" /> Descuento {porcentajeDescuento}%
+                          </span>
+                          <span className="font-semibold">-${formatear(descuento)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-slate-800 pt-2 border-t border-slate-200">
+                        <span className="font-bold">Total a pagar</span>
+                        <span className="font-bold">${formatear(total)}</span>
+                      </div>
+                      {!aplicaDescuento && (
+                        <p className="text-xs text-amber-700 mt-2">
+                          No calificás para descuento (tenés ausencias o reprogramaciones).
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })() : (
+                <div className="mt-auto mb-6" />
+              )}
+
+              {adminMode && (
+                <div className="mb-3">
+                  <label className="text-xs text-slate-600 mb-1 block">Email del paciente</label>
+                  <input value={adminEmail} onChange={(e) => setAdminEmail?.(e.target.value)} placeholder="email@ejemplo.com" className="w-full p-2 border rounded-md text-sm mb-3" />
                 </div>
               )}
 

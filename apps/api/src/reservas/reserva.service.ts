@@ -7,10 +7,11 @@ import { MailService } from '@/mail/mail.service';
 import { EstadoReserva, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { ConfiguracionService } from '@/configuracion/configuracion.service';
 
 @Injectable()
 export class ReservaService {
-  constructor(private prisma: PrismaService, private notificacionesService: NotificacionesService, private mailService: MailService, private eventEmitter: EventEmitter2,) {}
+  constructor(private prisma: PrismaService, private notificacionesService: NotificacionesService, private mailService: MailService, private eventEmitter: EventEmitter2,, private configuracionService: ConfiguracionService,) {}
   private readonly logger = new Logger(ReservaService.name);
 
   private async crearNotificacionReservaCreada(
@@ -851,8 +852,9 @@ export class ReservaService {
     
     const totalReprogramaciones = reservasConReprogramacion.reduce((acc, curr) => acc + curr.cant_reprogramaciones, 0);
 
+    const { porcentaje: porcentajeConfigurado } = await this.configuracionService.obtenerDescuento();
     const aplicaDescuento = ausencias < 2 && totalReprogramaciones < 2;
-    const porcentajeDescuento = aplicaDescuento ? 20 : 0;
+    const porcentajeDescuento = aplicaDescuento ? porcentajeConfigurado : 0;
 
     const reservaIds: number[] = [];
     //Escenario 6 
@@ -1060,10 +1062,11 @@ export class ReservaService {
     );
   
     const aplica = ausencias < 2 && totalReprogramaciones < 2;
+    const { porcentaje: porcentajeConfigurado } = await this.configuracionService.obtenerDescuento();
   
     return {
       aplica,
-      porcentaje: aplica ? 20 : 0,
+      porcentaje: aplica ? porcentajeConfigurado : 0,
       ausencias,
       totalReprogramaciones,
     };

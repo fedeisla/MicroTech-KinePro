@@ -228,6 +228,12 @@ model Descuento {
   utilizado     Boolean  @default(false)
 }
 
+model ConfiguracionDescuento {
+  id             Int      @id @default(autoincrement())
+  porcentaje     Decimal  @db.Decimal(5, 2)
+  actualizado_en DateTime @updatedAt
+}
+
 model Notificacion {
   id          Int                @id @default(autoincrement())
   paciente_id Int
