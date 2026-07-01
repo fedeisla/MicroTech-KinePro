@@ -182,6 +182,7 @@ model Reserva {
   paciente              Paciente      @relation(fields: [paciente_id], references: [id])
   estado                EstadoReserva @default(PENDIENTE)
   fecha_reserva         DateTime      @default(now())
+  fecha_estado          DateTime      @updatedAt
   cant_reprogramaciones Int           @default(0)
 
   pagos                 Pago[]
