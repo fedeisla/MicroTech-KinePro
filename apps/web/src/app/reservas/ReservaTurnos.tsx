@@ -552,7 +552,7 @@ export default function ReservaTurnos() {
           />
         </div>
       )}
-
+        
       {/* Selector de Modalidad */}
       <div className="mb-2">
         <SelectorModalidad 

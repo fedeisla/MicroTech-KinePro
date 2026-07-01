@@ -4,6 +4,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { EstadoListaEspera } from '@prisma/client';
 import { NotificacionesService } from '@/notificaciones/notificaciones.service';
+import { TipoNotificacion } from '@prisma/client';
 
 @Injectable()
 export class MotorMatchService {
@@ -55,14 +56,16 @@ export class MotorMatchService {
   }
 
   private async buscarSiguiente(turnoId: number, prioridad: number) {
+     
     return await this.prisma.listaEspera.findFirst({
       where: { turno_id: turnoId, prioridad, estado: EstadoListaEspera.PENDIENTE },
       orderBy: { fecha_anotacion: 'asc' }
     });
+    
   }
 
-  // EL CRON: Se ejecuta solo cada 5 minutos
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  // para test CronExpression.EVERY_10_SECONDS
+  @Cron(CronExpression.EVERY_10_SECONDS) // en produccion CronExpression.EVERY_5_MINUTES
   async limpiarExpirados() {
     const config = await this.prisma.configuracionSistema.findUnique({ where: { id: 1 } });
     const horasLimite = config ? config.horasExpiracionEspera : 12;
@@ -110,10 +113,10 @@ export class MotorMatchService {
             pacienteId: expirado.paciente_id,
             titulo,
             descripcion,
-            tipo: EstadoListaEspera.EXPIRADO, // Usá acá el tipo de Enum que corresponda en tu sistema
+            tipo: TipoNotificacion.CANCELACION_TURNO, // Usá acá el tipo de Enum que corresponda en tu sistema
             canal: 'EMAIL',
             enviarEmail: true,
-            email: expirado.paciente.usuario.email,
+            email: "Federicoisla1@gmail.com",
           });
           
           this.logger.log(`Email de expiración enviado correctamente al paciente ID ${expirado.paciente_id}`);
