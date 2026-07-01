@@ -28,10 +28,11 @@ export class EstadisticasService {
   async obtenerCancelaciones(desde: string, hasta: string) {
     const { fechaDesde, fechaHastaFin } = this.validarRango(desde, hasta);
 
+    // Contabilizar cancelaciones según la fecha en que se realizó la acción
     const total = await this.prisma.reserva.count({
       where: {
         estado: EstadoReserva.CANCELADA,
-        turno: { fecha: { gte: fechaDesde, lte: fechaHastaFin } },
+        fecha_estado: { gte: fechaDesde, lte: fechaHastaFin },
       },
     });
 
@@ -41,9 +42,10 @@ export class EstadisticasService {
   async obtenerReprogramaciones(desde: string, hasta: string) {
     const { fechaDesde, fechaHastaFin } = this.validarRango(desde, hasta);
 
+    // Contabilizar reprogramaciones según la fecha en que se realizó la acción
     const filtro = {
       cant_reprogramaciones: { gt: 0 },
-      turno: { fecha: { gte: fechaDesde, lte: fechaHastaFin } },
+      fecha_estado: { gte: fechaDesde, lte: fechaHastaFin },
     };
 
     const [resultado, reservasAfectadas] = await Promise.all([
@@ -63,31 +65,65 @@ export class EstadisticasService {
   async obtenerDemandaActividad(desde: string, hasta: string) {
     const { fechaDesde, fechaHastaFin } = this.validarRango(desde, hasta);
 
-    const agrupado = await this.prisma.turno.groupBy({
-      by: ['tipoActividad_id'],
-      where: { fecha: { gte: fechaDesde, lte: fechaHastaFin } },
-      _sum: { cantidad_inscriptos: true },
+    const reservas = await this.prisma.reserva.findMany({
+      where: {
+        fecha_reserva: { gte: fechaDesde, lte: fechaHastaFin },
+        estado: { not: EstadoReserva.CANCELADA },
+      },
+      select: {
+        paciente_id: true,
+        turno: {
+          select: { tipoActividad_id: true },
+        },
+      },
     });
 
-    if (agrupado.length === 0) {
+    const pacientesPorActividad = new Map<string, Set<number>>();
+
+    reservas.forEach((reserva) => {
+      const tipoActividadId = reserva.turno?.tipoActividad_id;
+      if (!tipoActividadId || typeof reserva.paciente_id !== 'number') {
+        return;
+      }
+
+      const key = `${tipoActividadId}`;
+      if (!pacientesPorActividad.has(key)) {
+        pacientesPorActividad.set(key, new Set<number>());
+      }
+
+      pacientesPorActividad.get(key)!.add(reserva.paciente_id);
+    });
+
+    const agrupado = Array.from(pacientesPorActividad.entries()).reduce((acc, [tipoActividadId, pacientes]) => {
+      acc[Number(tipoActividadId)] = pacientes.size;
+      return acc;
+    }, {} as Record<number, number>);
+
+    const items = Object.entries(agrupado)
+      .map(([tipoActividadId, cantidad]) => ({
+        actividadId: Number(tipoActividadId),
+        cantidad,
+      }))
+      .filter((item) => item.cantidad > 0);
+
+    if (items.length === 0) {
       return { items: [] };
     }
 
     const actividades = await this.prisma.tipoActividad.findMany({
-      where: { id: { in: agrupado.map((g) => g.tipoActividad_id) } },
+      where: { id: { in: items.map((item) => item.actividadId) } },
       select: { id: true, nombre: true },
     });
     const nombresPorId = new Map(actividades.map((a) => [a.id, a.nombre]));
 
-    const items = agrupado
-      .map((g) => ({
-        actividad: nombresPorId.get(g.tipoActividad_id) ?? 'Desconocida',
-        cantidad: g._sum.cantidad_inscriptos ?? 0,
+    const resultado = items
+      .map((item) => ({
+        actividad: nombresPorId.get(item.actividadId) ?? 'Desconocida',
+        cantidad: item.cantidad,
       }))
-      .filter((i) => i.cantidad > 0)
       .sort((a, b) => b.cantidad - a.cantidad);
 
-    return { items };
+    return { items: resultado };
   }
 
   async obtenerIngresos(desde: string, hasta: string) {
@@ -116,7 +152,7 @@ export class EstadisticasService {
 
     const total = await this.prisma.reserva.count({
       where: {
-        turno: { fecha: { gte: fechaDesde, lte: fechaHastaFin } },
+        fecha_reserva: { gte: fechaDesde, lte: fechaHastaFin },
       },
     });
 

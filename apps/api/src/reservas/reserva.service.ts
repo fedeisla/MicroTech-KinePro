@@ -953,6 +953,21 @@ export class ReservaService {
       throw new BadRequestException('El turno especificado no existe');
     }
 
+    const conflicto = await this.prisma.reserva.findFirst({
+      where: {
+        paciente_id: usuario.paciente!.id,
+        estado: { in: [EstadoReserva.CONFIRMADA, EstadoReserva.PENDIENTE] },
+        turno: {
+          fecha: turno.fecha,
+          hora_inicio: turno.hora_inicio,
+        },
+      },
+    });
+
+    if (conflicto) {
+      throw new BadRequestException('El paciente ya posee un turno para una actividad en el día y horario seleccionado');
+    }
+
     try {
       let nuevaReserva: any;
       await this.prisma.$transaction(async (tx) => {
