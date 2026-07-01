@@ -36,6 +36,7 @@ export default function PanelMensual({
   const [fechaHasta, setFechaHasta] = useState('');
   const [precioUnitario, setPrecioUnitario] = useState<number>(0);
   const [aplicaDescuento, setAplicaDescuento] = useState(false);
+  const [porcentajeDescuento, setPorcentajeDescuento] = useState(0)
   const { usuario } = useAuth();
 
   const calcularFechasFijas = () => {
@@ -76,11 +77,18 @@ export default function PanelMensual({
     const email = adminMode ? adminEmail : usuario?.email;
     if (!email) {
       setAplicaDescuento(false);
+      setPorcentajeDescuento(0);
       return;
     }
     chequearDescuento(email)
-      .then((res) => setAplicaDescuento(res.aplica))
-      .catch(() => setAplicaDescuento(false));
+      .then((res) => {
+        setAplicaDescuento(res.aplica);
+        setPorcentajeDescuento(res.porcentaje);
+      })
+      .catch(() => {
+        setAplicaDescuento(false);
+        setPorcentajeDescuento(0);
+      });
   }, [adminMode, adminEmail, usuario?.email]);
 
 
@@ -242,7 +250,7 @@ export default function PanelMensual({
                 const formatear = (n: number) =>
                   n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 const subtotal = precioUnitario * fechasCalculadas.length;
-                const descuento = aplicaDescuento ? subtotal * 0.2 : 0;
+                const descuento = aplicaDescuento ? subtotal * (porcentajeDescuento / 100) : 0;
                 const total = subtotal - descuento;
                 return (
                   <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mt-auto mb-6 shadow-sm">
@@ -254,7 +262,7 @@ export default function PanelMensual({
                       {aplicaDescuento && (
                         <div className="flex justify-between text-emerald-700">
                           <span className="flex items-center gap-1">
-                            <TicketPercent className="w-4 h-4" /> Descuento 20%
+                            <TicketPercent className="w-4 h-4" /> Descuento {porcentajeDescuento}%
                           </span>
                           <span className="font-semibold">-${formatear(descuento)}</span>
                         </div>

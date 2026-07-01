@@ -14,6 +14,7 @@ import { RolesGuard } from './auth/roles.guard';
 import { MailService } from './mail/mail.service';
 import { MailModule } from './mail/mail.module';
 import { EstadisticasModule } from './estadisticas/estadisticas.module';
+import { ConfiguracionModule } from './configuracion/configuracion.module';
 
 @Module({
   imports: [
@@ -28,6 +29,8 @@ import { EstadisticasModule } from './estadisticas/estadisticas.module';
     PagosModule,
     MailModule,
     EstadisticasModule,
+    ConfiguracionModule
+    
   ],
   providers: [
     {

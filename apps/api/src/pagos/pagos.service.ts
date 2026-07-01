@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service'
 import { NotificacionesService } from '@/notificaciones/notificaciones.service'
 import { CrearPagoDto } from './pagos.dto'
+import { ConfiguracionService } from '@/configuracion/configuracion.service'
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago'
 
 @Injectable()
@@ -14,6 +15,7 @@ export class PagosService {
     private prisma: PrismaService,
     private configService: ConfigService,
     private notificacionesService: NotificacionesService,
+    private configuracionService: ConfiguracionService,
   ) {
     const accessToken = this.configService.get<string>('MERCADOPAGO_ACCESS_TOKEN')
     if (!accessToken) {
@@ -383,8 +385,10 @@ export class PagosService {
       select: { cant_reprogramaciones: true },
     })
     const totalReprog = reservasConReprog.reduce((acc, c) => acc + c.cant_reprogramaciones, 0)
+    const { porcentaje: porcentajeConfigurado } = await this.configuracionService.obtenerDescuento()
     const aplicaDescuento = ausencias < 2 && totalReprog < 2
-    const precioPorReserva = aplicaDescuento ? precioBase * 0.8 : precioBase
+    const factorDescuento = aplicaDescuento ? (100 - porcentajeConfigurado) / 100 : 1
+    const precioPorReserva = precioBase * factorDescuento
 
     const cantidad = reservas.length
     const firstReservaId = Math.min(...reservaIds)
@@ -499,10 +503,11 @@ export class PagosService {
           include: { turno: { include: { tipoActividad: true } } },
         })
         if (reservaSample && precioReserva < Number(reservaSample.turno.tipoActividad.precio)) {
+          const { porcentaje: porcentajeConfigurado } = await this.configuracionService.obtenerDescuento()
           await tx.descuento.create({
             data: {
               paciente_id: pacienteId,
-              porcentaje: 20,
+              porcentaje: porcentajeConfigurado,
               motivo: 'Reserva de turnos fijos sin ausencias ni reprogramaciones',
               mes_aplicable: mesAplicable,
               utilizado: true,
