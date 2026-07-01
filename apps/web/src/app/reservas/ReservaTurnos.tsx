@@ -620,6 +620,7 @@ export default function ReservaTurnos() {
                 adminMode={esAdmin}
                 adminEmail={adminEmail}
                 setAdminEmail={setAdminEmail}
+                diasLlenos={diasLlenos}
              />
           )}
         </div>

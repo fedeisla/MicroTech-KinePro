@@ -7,7 +7,8 @@ import {
   Body,
   Post,
   Req,
-  Patch, 
+  Patch,
+  BadRequestException, 
   // UseGuards
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -27,6 +28,14 @@ export class ListaEsperaController {
     const pacienteId = req.user.pacienteId;
     return this.listaEsperaService.inscribirPaciente(body.turnoId, pacienteId, body.prioridad);
   }
+  
+  // --- VIRTUAL (Paciente - usa su token) ---
+  @Post('inscribir-fijo')
+  async inscribirFijo(@Req() req, @Body() body: { turnoIds: number[] }) {
+    // Usamos el ID del paciente del token
+    return await this.listaEsperaService.inscribirTurnoFijoVirtual(req.user.pacienteId, body.turnoIds);
+  }
+
 
   @Delete(':id')
   async cancelar(@Param('id') id: string) {
@@ -70,5 +79,12 @@ export class ListaEsperaController {
   async inscribirAdmin(@Body() body: { turnoId: number; email: string; prioridad: number }) {
     // Como el select del frontend manda el email del paciente, llamamos a un método preparado para eso
     return await this.listaEsperaService.inscribirPorEmail(body.turnoId, body.email, body.prioridad);
+  }
+  
+  // --- PRESENCIAL (Admin - busca por email) ---
+  @Post('admin/inscribir-fijo')
+  async inscribirFijoAdmin(@Body() body: { turnoIds: number[]; email: string }) {
+    // Usamos el email enviado por el admin
+    return await this.listaEsperaService.inscribirTurnoFijoPresencial(body.email, body.turnoIds);
   }
 }

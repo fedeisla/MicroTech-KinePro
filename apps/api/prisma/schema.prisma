@@ -209,6 +209,9 @@ model ListaEspera {
   paciente_id        Int
   paciente           Paciente          @relation(fields: [paciente_id], references: [id])
   prioridad          Int               
+  grupo_fijo_id      String?  
+  total_sesiones     Int      @default(1) 
+  sesiones_pendientes Int     @default(1) 
   estado             EstadoListaEspera @default(PENDIENTE)
   fecha_anotacion    DateTime          @default(now())
   fecha_notificacion DateTime?         
