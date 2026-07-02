@@ -129,19 +129,40 @@ export class EstadisticasService {
   async obtenerIngresos(desde: string, hasta: string) {
     const { fechaDesde, fechaHastaFin } = this.validarRango(desde, hasta);
 
-    const pagos = await this.prisma.pago.groupBy({
-      by: ['metodo'],
+    const pagos = await this.prisma.pago.findMany({
       where: {
         estado: EstadoPago.COMPLETADO,
         metodo: { in: [MetodoPago.EFECTIVO, MetodoPago.MERCADOPAGO] },
-        fecha_pago: { gte: fechaDesde, lte: fechaHastaFin },
       },
-      _sum: { monto: true },
+      select: {
+        metodo: true,
+        monto: true,
+        fecha_pago: true,
+        reserva: {
+          select: {
+            fecha_reserva: true,
+          },
+        },
+      },
     });
 
-    const items = pagos.map((p) => ({
-      metodo: p.metodo,
-      monto: Number(p._sum.monto ?? 0),
+    const acumuladoPorMetodo = new Map<string, number>();
+
+    for (const pago of pagos) {
+      const fechaCobro = pago.fecha_pago ?? pago.reserva?.fecha_reserva;
+      if (!fechaCobro) continue;
+
+      const estaEnRango = fechaCobro >= fechaDesde && fechaCobro <= fechaHastaFin;
+      if (!estaEnRango) continue;
+
+      const metodo = pago.metodo;
+      const monto = Number(pago.monto ?? 0);
+      acumuladoPorMetodo.set(metodo, (acumuladoPorMetodo.get(metodo) ?? 0) + monto);
+    }
+
+    const items = Array.from(acumuladoPorMetodo.entries()).map(([metodo, monto]) => ({
+      metodo: metodo as MetodoPago,
+      monto,
     }));
 
     return { items };
@@ -177,7 +198,7 @@ export class EstadisticasService {
       this.prisma.reserva.count({
         where: {
           ...filtroReservaEnPeriodo,
-          estado: { not: EstadoReserva.CANCELADA },
+          estado: { in: [EstadoReserva.ASISTIO, EstadoReserva.AUSENTE] },
         },
       }),
       this.prisma.reserva.count({
