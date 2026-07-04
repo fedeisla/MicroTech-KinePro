@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { fechasMismoDiaSemana, formatearFechaLocal, parseFechaLocal } from '@/lib/fechas';
 import { toast } from 'sonner';
-import { ArrowLeft, CheckCircle2, AlertCircle, ClipboardList } from 'lucide-react';
+// ✅ CORRECCIÓN 3: Se agregó TicketPercent al import
+import { ArrowLeft, CheckCircle2, AlertCircle, ClipboardList, TicketPercent } from 'lucide-react';
 import { RangoHorarioBackend, Actividad } from '@/types/turno';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
@@ -35,7 +36,12 @@ export default function PanelMensual({
   const [[paso, direccion], setPasoConfig] = useState<[1 | 2, number]>([1, 0]);
   const [fechaHasta, setFechaHasta] = useState('');
   const [prioridadEspera, setPrioridadEspera] = useState<number>(2);
-  const [porcentajeDescuento, setPorcentajeDescuento] = useState(0)
+  const [porcentajeDescuento, setPorcentajeDescuento] = useState(0);
+  
+  // ✅ CORRECCIÓN 2: Se agregaron los estados faltantes
+  const [precioUnitario, setPrecioUnitario] = useState(0);
+  const [aplicaDescuento, setAplicaDescuento] = useState(false);
+
   const { usuario } = useAuth();
 
   const estaLleno = actividadSeleccionada ? actividadSeleccionada.cuposDisponibles <= 0 : false;
@@ -73,7 +79,6 @@ export default function PanelMensual({
     setFechaHasta(formatearFechaLocal(finSugerido));
   }, [diasSeleccionados, mesActual, anioActual]);
 
-  // Cargar el precio del turno cuando se selecciona la actividad
   useEffect(() => {
     if (!actividadSeleccionada) {
       setPrecioUnitario(0);
@@ -84,7 +89,6 @@ export default function PanelMensual({
       .catch(() => setPrecioUnitario(0));
   }, [actividadSeleccionada]);
 
-  // Chequear si el paciente califica para descuento
   useEffect(() => {
     const email = adminMode ? adminEmail : usuario?.email;
     if (!email) {
@@ -102,7 +106,6 @@ export default function PanelMensual({
         setPorcentajeDescuento(0);
       });
   }, [adminMode, adminEmail, usuario?.email]);
-
 
   const handleSiguiente = () => setPasoConfig([2, 1]);
   const handleVolver = () => setPasoConfig([1, -1]);
@@ -124,7 +127,6 @@ export default function PanelMensual({
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Barra de progreso verde */}
       <div className="flex items-center gap-2 mb-6">
         <div className="flex-1 h-2 rounded-full bg-teal-600"></div>
         <div className={`flex-1 h-2 rounded-full ${paso === 2 ? 'bg-teal-600' : 'bg-slate-200'}`}></div>
@@ -177,14 +179,14 @@ export default function PanelMensual({
             <motion.div key="paso2" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 flex flex-col absolute inset-0 overflow-y-auto">
               <button onClick={() => setPasoConfig([1, -1])} className="text-sm text-slate-500 mb-4 flex items-center gap-1 hover:text-slate-800"><ArrowLeft className="w-4 h-4" /> Volver</button>
               
-              {estaLleno ? (
+              {/* ✅ CORRECCIÓN 1: Se reemplazó el ternario roto por un && simple */}
+              {estaLleno && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
                   <p className="text-amber-800 font-bold text-sm mb-2 flex items-center gap-2"><AlertCircle className="w-4 h-4" /> ¡Turno sin cupos!</p>
                   <p className="text-xs text-amber-700 mb-3">Estás seleccionando un horario completo. ¿Deseas unirte a la lista de espera?</p>
                 </div>
-              </div>
+              )}
 
-              {/* Desglose dinámico de precio */}
               {precioUnitario > 0 && fechasCalculadas.length > 0 ? (() => {
                 const formatear = (n: number) =>
                   n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

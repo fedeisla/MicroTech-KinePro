@@ -1,14 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { ChevronDown } from 'lucide-react'
 import type { TurnoResumen, TurnoDetalle, EstadoTurno } from '@/types/turno'
 import { getTurnoById } from '@/services/turnosService'
 import TabInscriptos from './TabInscriptos'
 import TabEspera from './TabEspera'
-
-
 
 interface TurnoGridProps {
   fecha: string | null
@@ -102,10 +100,11 @@ export default function TurnoGrid({ fecha, turnos, loading, onTurnosActualizados
             const reservas = Number(turno.reservasActuales)
             const capacidad = Number(turno.capacidad)
             const ocupacion = capacidad > 0 ? Math.round((reservas / capacidad) * 100) : 0
+            const estaLleno = turno.espaciosLibres <= 0
+
             return (
-              <>
+              <React.Fragment key={turno.id}>
                 <tr
-                  key={turno.id}
                   onClick={() => handleToggle(turno)}
                   className="cursor-pointer transition-colors hover:bg-kineblue/5"
                 >
@@ -138,25 +137,30 @@ export default function TurnoGrid({ fecha, turnos, loading, onTurnosActualizados
                 </tr>
 
                 {expanded && (
-                  <tr key={`${turno.id}-detalle`}>
+                  <tr>
                     <td colSpan={6} className="bg-neutral-bg/30 px-6 py-4">
                       {loadingDetalle && !detalle ? (
                         <p className="text-center text-xs text-neutral-gray">Cargando detalle…</p>
                       ) : detalle ? (
-                        <DetalleInscriptos detalle={detalle} fecha={fecha} onReservaCreada={async () => {
-                          setLoadingDetalle(true)
-                          try {
-                            setDetalle(await getTurnoById(detalle.id))
-                            onTurnosActualizados?.()
-                          } finally {
-                            setLoadingDetalle(false)
-                          }
-                        }} />
+                        <DetalleInscriptos 
+                          detalle={detalle} 
+                          fecha={fecha} 
+                          estaLleno={estaLleno}
+                          onReservaCreada={async () => {
+                            setLoadingDetalle(true)
+                            try {
+                              setDetalle(await getTurnoById(detalle.id))
+                              onTurnosActualizados?.()
+                            } finally {
+                              setLoadingDetalle(false)
+                            }
+                          }} 
+                        />
                       ) : null}
                     </td>
                   </tr>
                 )}
-              </>
+              </React.Fragment>
             )
           })}
         </tbody>
@@ -167,7 +171,17 @@ export default function TurnoGrid({ fecha, turnos, loading, onTurnosActualizados
 
 // ─── Detalle expandido ────────────────────────────────────────────────────────
 
-function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: TurnoDetalle; fecha: string | null; onReservaCreada?: () => Promise<void> }) {
+function DetalleInscriptos({ 
+  detalle, 
+  fecha, 
+  estaLleno = false, 
+  onReservaCreada 
+}: { 
+  detalle: TurnoDetalle; 
+  fecha: string | null; 
+  estaLleno?: boolean;
+  onReservaCreada?: () => Promise<void> 
+}) {
   const { rol } = useAuth()
   const esAdmin = rol === 'ADMIN' || rol === 'OWNER'
   const [email, setEmail] = useState('')
@@ -505,115 +519,35 @@ function DetalleInscriptos({ detalle, fecha, onReservaCreada }: { detalle: Turno
 
   return (
     <div className="space-y-4">
-      {/* --- BOTONERA DE TABS --- */}
-      {esAdmin && (
-        <div className="mt-3 border-t pt-3 space-y-2">
-          
-          <label className="text-xs text-slate-600 mb-1 block">Paciente</label>
-          <select
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full p-2 border rounded-md text-sm bg-white"
+      {/* Botonera de Pestañas */}
+      <div className="flex gap-4 border-b border-neutral-bg pb-2">
+        <button 
+          onClick={() => setTabActiva('INSCRIPTOS')} 
+          className={`text-sm font-semibold transition-colors ${tabActiva === 'INSCRIPTOS' ? 'text-kineblue border-b-2 border-kineblue pb-1' : 'text-neutral-gray hover:text-slate-700'}`}
+        >
+          Inscriptos
+        </button>
+        {esAdmin && (
+          <button 
+            onClick={() => setTabActiva('ESPERA')} 
+            className={`text-sm font-semibold transition-colors ${tabActiva === 'ESPERA' ? 'text-kineblue border-b-2 border-kineblue pb-1' : 'text-neutral-gray hover:text-slate-700'}`}
           >
-            <option value="">Seleccionar paciente</option>
-            {pacientes.map((p) => (
-              <option key={p.id} value={p.email}>
-                {p.nombre} {p.apellido}
-              </option>
-            ))}
-          </select>
-          
-          <label className="text-xs text-slate-600 mb-1 block mt-2">Método de pago</label>
-          <select
-            value={metodoPago}
-            onChange={(e) => setMetodoPago(e.target.value as 'EFECTIVO' | 'TARJETA' | '')}
-            className="w-full p-2 border rounded-md text-sm bg-white"
-          >
-            <option value="">Seleccionar método</option>
-            <option value="EFECTIVO">Efectivo</option>
-            <option value="TARJETA">Posnet</option>
-          </select>
-          
-          {(() => {
-            const precioUnitario = detalle.precio ?? 0
-            const formatear = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                    
-            if (tipoReserva === 'unico') {
-              return (
-                <div className="mt-2 text-xs text-slate-600">
-                  Monto a abonar: <span className="font-bold text-slate-800">${formatear(precioUnitario)}</span>
-                </div>
-              )
-            }
-          
-            // Modalidad fijo
-            let cantidadTurnos = 0
-            if (fecha && fechaFin) {
-              cantidadTurnos = calcularFechasFixas(fecha, fechaFin).length
-            }
-          
-            const subtotal = precioUnitario * cantidadTurnos
-            const descuento = aplicaDescuento ? subtotal * (porcentajeDescuento / 100) : 0
-            const total = subtotal - descuento
-          
-            return (
-              <div className="mt-2 text-xs text-slate-600">
-                {cantidadTurnos > 0 ? (
-                  <>
-                    <div>Subtotal: <span className="font-semibold text-slate-700">${formatear(subtotal)}</span> <span className="text-slate-500">({cantidadTurnos} turnos × ${formatear(precioUnitario)})</span></div>
-                    {aplicaDescuento && (
-                      <div className="text-emerald-700">Descuento {porcentajeDescuento}%: -${formatear(descuento)}</div>
-                    )}
-                    <div className="mt-1">Total a cobrar: <span className="font-bold text-slate-800">${formatear(total)}</span></div>
-                    {!aplicaDescuento && email && (
-                      <div className="text-amber-700 mt-1">El paciente no califica para descuento (tiene ausencias o reprogramaciones).</div>
-                    )}
-                  </>
-                ) : (
-                  <>Monto total a abonar: <span className="font-bold text-slate-800">$-</span> <span className="text-slate-400">(ingresá una fecha de fin)</span></>
-                )}
-              </div>
-            )
-          })()}
+            Lista de Espera
+          </button>
+        )}
+      </div>
 
-          <div className="flex gap-3">
-            <label className="flex items-center gap-2 text-xs cursor-pointer">
-              <input type="radio" name="tipo" value="unico" checked={tipoReserva === 'unico'} onChange={(e) => setTipoReserva('unico')} />
-              Turno único
-            </label>
-            <label className="flex items-center gap-2 text-xs cursor-pointer">
-              <input type="radio" name="tipo" value="fijo" checked={tipoReserva === 'fijo'} onChange={(e) => setTipoReserva('fijo')} />
-              Turnos fijos
-            </label>
-          </div>
-
-          {tipoReserva === 'unico' ? (
-            <button disabled={loading} onClick={handleReservarPorEmail} className="w-full px-3 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700">
-              Anotar
-            </button>
-          ) : (
-            <>
-              <label className="text-xs text-slate-600 block">Fecha de fin (YYYY-MM-DD)</label>
-              <input value={fechaFin} onChange={(e) => setFechaFin(e.target.value)} type="date" className="w-full p-2 border rounded-md text-sm" />
-              <button disabled={loading} onClick={handleReservarFijosPorEmail} className="w-full px-3 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700">
-                Anotar turnos fijos
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* --- CONTENIDO DE LA PESTAÑA: INSCRIPTOS --- */}
+      {/* Renderizado Condicional de las Pestañas */}
       {tabActiva === 'INSCRIPTOS' && (
         <TabInscriptos 
           detalle={detalle} 
           fecha={fecha} 
           esAdmin={esAdmin} 
+          estaLleno={estaLleno} // Lo pasamos como prop a la Tab Inscriptos
           onReservaCreada={onReservaCreada} 
         />
       )}
 
-      {/* --- CONTENIDO DE LA PESTAÑA: ESPERA --- */}
       {tabActiva === 'ESPERA' && esAdmin && (
         <TabEspera 
           turnoId={detalle.id} 
