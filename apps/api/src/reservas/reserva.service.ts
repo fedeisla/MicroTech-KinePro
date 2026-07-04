@@ -11,7 +11,7 @@ import { ConfiguracionService } from '@/configuracion/configuracion.service';
 
 @Injectable()
 export class ReservaService {
-  constructor(private prisma: PrismaService, private notificacionesService: NotificacionesService, private mailService: MailService, private eventEmitter: EventEmitter2,, private configuracionService: ConfiguracionService,) {}
+  constructor(private prisma: PrismaService, private notificacionesService: NotificacionesService, private mailService: MailService, private eventEmitter: EventEmitter2, private configuracionService: ConfiguracionService,) {}
   private readonly logger = new Logger(ReservaService.name);
 
   private async crearNotificacionReservaCreada(
