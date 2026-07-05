@@ -30,7 +30,7 @@ export class ListaEsperaController {
   }
   
   // --- VIRTUAL (Paciente - usa su token) ---
- @Post('inscribir-fijo')
+  @Post('inscribir-fijo')
   async inscribirFijo(@Req() req, @Body() body: { turnoId: number, fechasString: string[] }) {
     return await this.listaEsperaService.inscribirTurnoFijoVirtual(
       req.user.pacienteId, 
@@ -39,15 +39,13 @@ export class ListaEsperaController {
     );
   }
 
-
   @Delete(':id')
   async cancelar(@Param('id') id: string) {
     return this.listaEsperaService.cancelarEspera(+id);
   }
 
   @Patch(':id/responder')
-  async responderNotificacion( @Param('id') id: string,  @Body() body: { acepta: boolean; turnoId?: number }) 
-  {
+  async responderNotificacion( @Param('id') id: string,  @Body() body: { acepta: boolean; turnoId?: number }) {
     return await this.listaEsperaService.confirmarTurno(+id, body.acepta);
   }
 
@@ -55,8 +53,6 @@ export class ListaEsperaController {
   async obtenerMiEstado(@Req() req) {
     return this.listaEsperaService.obtenerEstadoPaciente(req.user.pacienteId);
   }
-
-
 
   @Get('turno/:turnoId/admin')
   // @UseGuards(JwtAuthGuard, RolesGuard)
@@ -79,9 +75,16 @@ export class ListaEsperaController {
   }
   
   // --- PRESENCIAL (Admin - busca por email) ---
- /* @Post('admin/inscribir-fijo')
-  async inscribirFijoAdmin(@Body() body: { turnoIds: number[]; email: string }) {
-    // Usamos el email enviado por el admin
-    return await this.listaEsperaService.inscribirTurnoFijoPresencial(body.email, body.turnoIds);
-  }*/
+  @Post('admin/inscribir-fijo')
+  // @UseGuards(JwtAuthGuard, RolesGuard)
+  async inscribirFijoAdmin(
+    @Body() body: { email: string; turnoInicialId: number; fechasString: string[]; prioridad: number }
+  ) {
+    return await this.listaEsperaService.inscribirTurnoFijoPresencial(
+      body.email, 
+      body.turnoInicialId,
+      body.fechasString,
+      body.prioridad
+    );
+  }
 }
