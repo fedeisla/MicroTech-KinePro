@@ -53,6 +53,10 @@ export class ListaEsperaController {
   async obtenerMiEstado(@Req() req) {
     return this.listaEsperaService.obtenerEstadoPaciente(req.user.pacienteId);
   }
+  @Get('mis-estados')
+  async obtenerMisEstados(@Req() req) {
+    return this.listaEsperaService.obtenerEstadosPaciente(req.user.pacienteId);
+  }
 
   @Get('turno/:turnoId/admin')
   // @UseGuards(JwtAuthGuard, RolesGuard)

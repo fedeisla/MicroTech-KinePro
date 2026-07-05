@@ -6,6 +6,8 @@ export interface BannerEsperaProps {
   onCancelar: () => void;
   onAceptar?: () => void;
   onRechazar?: () => void;
+  totalActivas?: number;
+  onVerTodas?: () => void;
   cargando: boolean;
   turnoInfo?: {
     actividad: string;
@@ -14,26 +16,24 @@ export interface BannerEsperaProps {
   };
 }
 
-// Funciones de formateo auxiliares
 const formatearFecha = (fechaRaw: string) => {
   if (!fechaRaw) return '';
-  // Si viene en formato ISO (ej: 2026-07-08T00:00:00Z) o YYYY-MM-DD
-  const fechaLimpia = fechaRaw.split('T')[0]; 
+  const fechaLimpia = fechaRaw.split('T')[0].split(' ')[0]; // Cubre 'T' o espacio
   const partes = fechaLimpia.split('-');
   if (partes.length === 3) {
-    return `${partes[2]}/${partes[1]}/${partes[0]}`; // Devuelve DD/MM/YYYY
+    return `${partes[2]}/${partes[1]}/${partes[0]}`;
   }
   return fechaRaw;
 };
+
 const formatearHora = (horaRaw: string) => {
   if (!horaRaw) return '';
-  
-  if (horaRaw.includes('T')) {
-    const tiempo = horaRaw.split('T')[1]; // Nos quedamos con la parte derecha de la 'T' (14:30:00.000Z)
-    return tiempo.substring(0, 5); // Ahora sí agarramos '14:30'
+  // Si viene completa con 'T' o espacio
+  if (horaRaw.includes('T') || horaRaw.includes(' ')) {
+    const separador = horaRaw.includes('T') ? 'T' : ' ';
+    const tiempo = horaRaw.split(separador)[1];
+    return tiempo.substring(0, 5);
   }
-  
-  
   return horaRaw.substring(0, 5);
 };
 
@@ -43,6 +43,8 @@ export const BannerEspera = ({
   onCancelar, 
   onAceptar, 
   onRechazar, 
+  totalActivas,
+  onVerTodas,
   cargando,
   turnoInfo 
 }: BannerEsperaProps) => {
@@ -70,7 +72,17 @@ export const BannerEspera = ({
             <p className="text-sm text-teal-700 mt-1">Tenés 12hs para aceptar o rechazar.</p>
           </div>
         </div>
+        
+        {/* BOTONES ALINEADOS A LA DERECHA */}
         <div className="flex gap-2 shrink-0 w-full sm:w-auto">
+          {totalActivas && totalActivas > 1 && (
+            <button 
+              onClick={onVerTodas}
+              className="flex-1 sm:flex-none flex justify-center items-center text-sm bg-teal-100 text-teal-700 font-medium px-3 py-2 rounded-lg hover:bg-teal-200 transition-colors"
+            >
+              Ver listas ({totalActivas})
+            </button>
+          )}
           <button 
             onClick={onRechazar} 
             disabled={cargando} 
@@ -115,13 +127,25 @@ export const BannerEspera = ({
             </p>
           </div>
         </div>
-        <button 
-          onClick={onCancelar} 
-          disabled={cargando} 
-          className="w-full sm:w-auto flex justify-center text-sm bg-white border border-blue-200 text-blue-600 px-4 py-2 rounded-lg hover:bg-blue-100 transition-colors shrink-0 disabled:opacity-50"
-        >
-          {cargando ? <Loader2 className="w-4 h-4 animate-spin" /> : "Cancelar"}
-        </button>
+        
+        {/* BOTONES ALINEADOS A LA DERECHA */}
+        <div className="flex gap-2 shrink-0 w-full sm:w-auto">
+          {totalActivas && totalActivas > 1 && (
+            <button 
+              onClick={onVerTodas}
+              className="w-full sm:w-auto flex justify-center text-sm bg-blue-100 text-blue-700 font-medium px-4 py-2 rounded-lg hover:bg-blue-200 transition-colors shrink-0"
+            >
+              Ver listas ({totalActivas})
+            </button>
+          )}
+          <button 
+            onClick={onCancelar} 
+            disabled={cargando} 
+            className="w-full sm:w-auto flex justify-center text-sm bg-white border border-blue-200 text-blue-600 px-4 py-2 rounded-lg hover:bg-blue-100 transition-colors shrink-0 disabled:opacity-50"
+          >
+            {cargando ? <Loader2 className="w-4 h-4 animate-spin" /> : "Cancelar"}
+          </button>
+        </div>
       </div>
     );
   }
