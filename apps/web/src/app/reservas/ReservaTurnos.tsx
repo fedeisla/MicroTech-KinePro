@@ -600,6 +600,12 @@ export default function ReservaTurnos() {
           <BannerEspera 
             estado={solicitudEspera.estado} 
             personasAdelante={solicitudEspera.personasAdelante}
+            // Mapeamos los datos del turno que vienen de la API
+            turnoInfo={{
+              actividad: solicitudEspera.turno?.tipoActividad?.nombre || 'Turno', 
+              fecha: solicitudEspera.turno?.fecha, 
+              hora: solicitudEspera.turno?.hora_inicio
+            }}
             onCancelar={handleCancelarEspera}
             onAceptar={() => handleResponderNotificacion(true)}
             onRechazar={() => handleResponderNotificacion(false)}

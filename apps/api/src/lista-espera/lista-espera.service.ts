@@ -12,7 +12,7 @@ export class ListaEsperaService {
   // ─── MÉTODOS DE CONSULTA Y ESTADO ───────────────────────────────────
   // ====================================================================
 
-  async obtenerEstadoPaciente(pacienteId: number) {
+ async obtenerEstadoPaciente(pacienteId: number) {
     const espera = await this.prisma.listaEspera.findFirst({
       where: {
         paciente_id: pacienteId,
@@ -24,11 +24,20 @@ export class ListaEsperaService {
 
     if (!espera) return null;
 
+    // Calculamos las personas adelante teniendo en cuenta la PRIORIDAD y luego la FECHA
     const personasAdelante = await this.prisma.listaEspera.count({
       where: {
         turno_id: espera.turno_id,
-        fecha_anotacion: { lt: espera.fecha_anotacion },
-        estado: { in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO] }
+        estado: { in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO] },
+        OR: [
+          { 
+            prioridad: { lt: espera.prioridad } 
+          },
+          { 
+            prioridad: espera.prioridad,
+            fecha_anotacion: { lt: espera.fecha_anotacion } 
+          }
+        ]
       }
     });
 
