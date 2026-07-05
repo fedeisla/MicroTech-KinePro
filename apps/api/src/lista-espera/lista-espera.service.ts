@@ -75,23 +75,27 @@ export class ListaEsperaService {
   // ─── INSCRIPCIÓN FIJA (BLOQUES/GRUPOS) ──────────────────────────────
   // ====================================================================
 
- 
+  async inscribirTurnoFijoVirtual(pacienteId: number, turnoInicialId: number, fechasString: string[]) {
+    // Se asume prioridad 1 para los virtuales (podés ajustarlo según tus reglas de negocio)
+    return await this._registrarBloqueFijo(pacienteId, turnoInicialId, fechasString, 1);
+  }
 
-  /*async inscribirTurnoFijoPresencial(email: string, turnoIds: number[]) {
+  async inscribirTurnoFijoPresencial(email: string, turnoInicialId: number, fechasString: string[], prioridad: number) {
+    // 1. Buscar al paciente por email
     const paciente = await this.prisma.paciente.findFirst({
       where: { usuario: { email } }
     });
-    if (!paciente) throw new NotFoundException('Paciente no encontrado');
     
-    return await this._registrarBloqueFijo(paciente.id, turnoIds);
-  }*/
-async inscribirTurnoFijoVirtual(pacienteId: number, turnoInicialId: number, fechasString: string[]) {
-    return await this._registrarBloqueFijo(pacienteId, turnoInicialId, fechasString);
+    if (!paciente) {
+      throw new NotFoundException(`No se encontró un paciente registrado con el email: ${email}`);
+    }
+    
+    // 2. Reutilizar la lógica de bloques pasándole el ID del paciente encontrado y la prioridad
+    return await this._registrarBloqueFijo(paciente.id, turnoInicialId, fechasString, prioridad);
   }
 
-  private async _registrarBloqueFijo(pacienteId: number, turnoInicialId: number, fechasString: string[]) {
-    
-    // 1. Buscar el turno base para obtener actividad y horario (Igual que en reservas fijas)
+  private async _registrarBloqueFijo(pacienteId: number, turnoInicialId: number, fechasString: string[], prioridad: number) {
+    // 1. Buscar el turno base para obtener actividad y horario
     const turnoBase = await this.prisma.turno.findUnique({
       where: { id: turnoInicialId },
     });
@@ -100,7 +104,7 @@ async inscribirTurnoFijoVirtual(pacienteId: number, turnoInicialId: number, fech
       throw new BadRequestException('El turno inicial seleccionado no existe');
     }
 
-    // 2. Buscar en la BD todos los turnos del bloque (Trabaja idéntico a reservas fijas)
+    // 2. Buscar en la BD todos los turnos del bloque
     const turnos = await this.prisma.turno.findMany({
       where: {
         tipoActividad_id: turnoBase.tipoActividad_id,
@@ -131,19 +135,30 @@ async inscribirTurnoFijoVirtual(pacienteId: number, turnoInicialId: number, fech
         estado: { in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO] }
       }
     });
-    if (existente) throw new BadRequestException('El paciente ya tiene una solicitud activa en uno de estos turnos.');
+    
+    if (existente) {
+      throw new BadRequestException('El paciente ya tiene una solicitud activa en uno de estos turnos.');
+    }
 
-    // 5. Crear bloque
+    // 5. Crear bloque usando la prioridad dinámica
     const grupoId = crypto.randomUUID(); 
     return await this.prisma.$transaction(
       turnoIds.map(tid => 
         this.prisma.listaEspera.create({
-          data: { turno_id: tid, paciente_id: pacienteId, prioridad: 1, grupo_fijo_id: grupoId }
+          data: { 
+            turno_id: tid, 
+            paciente_id: pacienteId, 
+            prioridad: prioridad, 
+            grupo_fijo_id: grupoId 
+          }
         })
       )
     );
   }
 
+  // ====================================================================
+  // ─── CANCELACIONES Y CONFIRMACIONES ─────────────────────────────────
+  // ====================================================================
 
   async cancelarEspera(id: number) {
     const espera = await this.prisma.listaEspera.findUnique({ where: { id } });
@@ -159,7 +174,7 @@ async inscribirTurnoFijoVirtual(pacienteId: number, turnoInicialId: number, fech
     return await this.prisma.listaEspera.update({ where: { id }, data: { estado: EstadoListaEspera.CANCELADO } });
   }
 
- async confirmarTurno(id: number, acepta: boolean) {
+  async confirmarTurno(id: number, acepta: boolean) {
     // 1. Buscar la solicitud de lista de espera inicial
     const esperaInicial = await this.prisma.listaEspera.findUnique({ where: { id } });
     
@@ -272,14 +287,15 @@ async inscribirTurnoFijoVirtual(pacienteId: number, turnoInicialId: number, fech
       return {
         message: esperaInicial.grupo_fijo_id ? 'Bloque de turnos fijos confirmado con éxito.' : 'Turno confirmado con éxito.',
         cantidadReservas: solicitudesAProcesar.length,
-        reservaIds: reservaIds, // Todos los IDs (por si armás un link de MP que englobe múltiples items)
-        reservaId: reservaIds[0], // El primer ID (para mantener compatibilidad con tu código del frontend actual)
+        reservaIds: reservaIds,
+        reservaId: reservaIds[0], 
         montoTotal: montoTotal,
         aplicaDescuento: aplicaDescuento,
         porcentajeAplicado: porcentajeFinal
       };
     });
   }
+
   async obtenerListaParaAdmin(turnoId: number) {
     return await this.prisma.listaEspera.findMany({
       where: { 
@@ -299,9 +315,11 @@ async inscribirTurnoFijoVirtual(pacienteId: number, turnoInicialId: number, fech
     return this.inscribirPaciente(turnoId, paciente.id, prioridad);
   }
 
+  // ====================================================================
+  // ─── UTILIDADES ─────────────────────────────────────────────────────
+  // ====================================================================
 
-
-   private parseFechaYYYYMMDD(fecha: string): Date {
+  private parseFechaYYYYMMDD(fecha: string): Date {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fecha);
     if (!m) {
       throw new BadRequestException('La fecha debe estar en formato YYYY-MM-DD');
@@ -311,5 +329,4 @@ async inscribirTurnoFijoVirtual(pacienteId: number, turnoInicialId: number, fech
     const day = Number(m[3]);
     return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
   }
-
 }

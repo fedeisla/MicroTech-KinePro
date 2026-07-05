@@ -41,7 +41,9 @@ export default function TabInscriptos({ detalle, fecha, esAdmin, estaLleno = fal
   const [pacientes, setPacientes] = useState<PacienteOption[]>([])
   const [aplicaDescuento, setAplicaDescuento] = useState(false)
   const [porcentajeDescuento, setPorcentajeDescuento] = useState(0)
-  const [prioridadEspera, setPrioridadEspera] = useState<number>(2) 
+  
+  // Estado para Lista de Espera (Eliminamos el estado de prioridad)
+  const [mostrarBotonEsperaFijo, setMostrarBotonEsperaFijo] = useState(false)
 
   // Estados para cancelar/reprogramar
   const [reprogramarReservaId, setReprogramarReservaId] = useState<number | null>(null)
@@ -79,14 +81,49 @@ export default function TabInscriptos({ detalle, fecha, esAdmin, estaLleno = fal
     return fin < inicio ? [] : fechasMismoDiaSemana(inicio, fin)
   }
 
+  const calcularFechasFijas = (fechaInicio: string, fechaFinStr: string): string[] => {
+    const inicio = parseFechaLocal(fechaInicio)
+    const fin = parseFechaLocal(fechaFinStr)
+    
+    if (fin < inicio) return []
+    
+    const arrayDeFechas = fechasMismoDiaSemana(inicio, fin)
+    
+    // Mapeamos cada objeto Date a un string 'YYYY-MM-DD'
+    return arrayDeFechas.map((d: Date) => {
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    })
+  }
+
   const handleAgregarAListaEspera = async () => {
     if (!email) return toast.error('Seleccione un paciente')
     
     setLoading(true)
     try {
-      await listaEsperaService.inscribirAdmin(email, detalle.id, prioridadEspera)
+      // Determinamos la prioridad automáticamente basada en el tipo de reserva
+      const prioridadCalculada = tipoReserva === 'fijo' ? 1 : 2;
+
+      if (tipoReserva === 'fijo') {
+        if (!fechaFin) return toast.error('Ingrese la fecha de fin')
+        if (!fecha) return toast.error('No se pudo obtener la fecha del turno')
+        
+        const fechas = calcularFechasFijas(fecha, fechaFin)
+        if (fechas.length === 0) return toast.error('La fecha de fin debe ser posterior')
+        
+        // Llamada al endpoint con la prioridad ya calculada
+        await listaEsperaService.inscribirTurnoFijoPresencial(email, detalle.id, fechas, prioridadCalculada)
+      } else {
+        // Llamada al endpoint normal con la prioridad ya calculada
+        await listaEsperaService.inscribirAdmin(email, detalle.id, prioridadCalculada)
+      }
+      
       toast.success('Paciente ingresado a la lista de espera con éxito')
       setEmail('')
+      setFechaFin('')
+      setMostrarBotonEsperaFijo(false)
       if (onReservaCreada) await onReservaCreada()
     } catch (err: any) {
       toast.error('No se pudo agregar al paciente', { 
@@ -165,9 +202,22 @@ export default function TabInscriptos({ detalle, fecha, esAdmin, estaLleno = fal
       setEmail('')
       setMetodoPago('')
       setFechaFin('')
+      setMostrarBotonEsperaFijo(false)
       if (onReservaCreada) await onReservaCreada()
     } catch (err: any) {
-      toast.error('No se pudieron crear las reservas', { description: err.message })
+      const msg = (err.message || '').toLowerCase()
+      
+      if (
+        msg.includes('capacidad') || 
+        msg.includes('lleno') || 
+        msg.includes('disponibilidad') || 
+        msg.includes('disponible') || 
+        msg.includes('cupo')
+      ) {
+        setMostrarBotonEsperaFijo(true)
+      } else {
+        toast.error('No se pudieron crear las reservas', { description: err.message })
+      }
     } finally {
       setLoading(false)
     }
@@ -196,62 +246,60 @@ export default function TabInscriptos({ detalle, fecha, esAdmin, estaLleno = fal
 
   return (
     <div className="space-y-4">
-      {/* FORMULARIO DE ADMINISTRADOR (ARRIBA) */}
+      {/* FORMULARIO DE ADMINISTRADOR */}
       {esAdmin && (
         <div className="bg-slate-50 border border-slate-100 p-4 rounded-xl space-y-3 mb-4 shadow-sm">
-          {estaLleno ? (
-            /* --- VISTA: TURNO LLENO (LISTA DE ESPERA) --- */
-            <>
-              <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-md text-xs mb-3 font-medium">
-                El turno está completo. El paciente será anotado directamente en la <strong>Lista de Espera</strong>.
-              </div>
-              
-              <label className="text-xs text-slate-600 mb-1 block">Paciente</label>
-              <select
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full p-2 border border-slate-200 rounded-md text-sm bg-white"
-              >
-                <option value="">Seleccionar paciente </option>
-                {pacientes.map((p) => (
-                  <option key={p.id} value={p.email}>{p.nombre} {p.apellido}</option>
-                ))}
-              </select>
+          
+          {estaLleno && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-md text-xs mb-3 font-medium">
+              El turno actual está completo. El paciente será anotado directamente en la <strong>Lista de Espera</strong>.
+            </div>
+          )}
 
-              <div className="flex gap-5 py-2">
-                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-                  <input type="radio" name="prioridadEspera" checked={prioridadEspera === 1} onChange={() => setPrioridadEspera(1)} />
-                  Turno fijo 
-                </label>
-                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-                  <input type="radio" name="prioridadEspera" checked={prioridadEspera === 2} onChange={() => setPrioridadEspera(2)} />
-                  Por demanda 
-                </label>
-              </div>
+          <label className="text-xs text-slate-600 mb-1 block">Paciente</label>
+          <select
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full p-2 border border-slate-200 rounded-md text-sm bg-white"
+          >
+            <option value="">Seleccionar paciente</option>
+            {pacientes.map((p) => (
+              <option key={p.id} value={p.email}>{p.nombre} {p.apellido}</option>
+            ))}
+          </select>
 
-              <button disabled={loading} onClick={handleAgregarAListaEspera} className="w-full px-3 py-2 rounded-md bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 transition-colors disabled:opacity-50">
-                {loading ? 'Ingresando...' : 'Agregar a Lista de Espera'}
-              </button>
-            </>
-          ) : (
-            /* --- VISTA: TURNO CON LUGAR (RESERVA NORMAL) --- */
+          <div className="flex gap-4 mt-3">
+            <label className="flex items-center gap-2 text-xs cursor-pointer text-slate-700">
+              <input type="radio" name="tipo" value="unico" checked={tipoReserva === 'unico'} onChange={() => { setTipoReserva('unico'); setMostrarBotonEsperaFijo(false); }} />
+              Turno único
+            </label>
+            <label className="flex items-center gap-2 text-xs cursor-pointer text-slate-700">
+              <input type="radio" name="tipo" value="fijo" checked={tipoReserva === 'fijo'} onChange={() => setTipoReserva('fijo')} />
+              Turnos fijos
+            </label>
+          </div>
+
+          {tipoReserva === 'fijo' && (
+            <div className="mt-2 space-y-2">
+              <label className="text-xs text-slate-500 block">Fecha de fin (YYYY-MM-DD)</label>
+              <input 
+                value={fechaFin} 
+                onChange={(e) => { setFechaFin(e.target.value); setMostrarBotonEsperaFijo(false); }} 
+                type="date" 
+                className="w-full p-2 border border-slate-200 rounded-md text-sm bg-white" 
+              />
+            </div>
+          )}
+
+          {!estaLleno && (
             <>
-              <label className="text-xs font-semibold text-slate-700 mb-1 block">Anotar paciente</label>
-              <select value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-2 border border-slate-200 rounded-md text-sm bg-white">
-                <option value="">Seleccionar paciente</option>
-                {pacientes.map((p) => (
-                  <option key={p.id} value={p.email}>{p.nombre} {p.apellido}</option>
-                ))}
-              </select>
-              
               <label className="text-xs text-slate-600 mb-1 block mt-2">Método de pago</label>
               <select value={metodoPago} onChange={(e) => setMetodoPago(e.target.value as 'EFECTIVO' | 'TARJETA' | '')} className="w-full p-2 border border-slate-200 rounded-md text-sm bg-white">
                 <option value="">Seleccionar método</option>
                 <option value="EFECTIVO">Efectivo</option>
                 <option value="TARJETA">Posnet</option>
               </select>
-              
-              {/* Desglose de precios dinámico */}
+
               {(() => {
                 const precioUnitario = detalle.precio ?? 0
                 const formatear = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -292,32 +340,37 @@ export default function TabInscriptos({ detalle, fecha, esAdmin, estaLleno = fal
                   </div>
                 )
               })()}
+            </>
+          )}
 
-              <div className="flex gap-4 mt-3">
-                <label className="flex items-center gap-2 text-xs cursor-pointer text-slate-700">
-                  <input type="radio" name="tipo" value="unico" checked={tipoReserva === 'unico'} onChange={() => setTipoReserva('unico')} />
-                  Turno único
-                </label>
-                <label className="flex items-center gap-2 text-xs cursor-pointer text-slate-700">
-                  <input type="radio" name="tipo" value="fijo" checked={tipoReserva === 'fijo'} onChange={() => setTipoReserva('fijo')} />
-                  Turnos fijos
-                </label>
+          {/* ZONA DE BOTONES DE ACCIÓN */}
+          {estaLleno || mostrarBotonEsperaFijo ? (
+            <div className="mt-4 pt-3 border-t border-slate-200">
+              
+              {mostrarBotonEsperaFijo && !estaLleno && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-md text-xs mb-3 font-medium">
+                  Al menos un turno en este período está lleno. Podés anotar al paciente en la <strong>Lista de Espera</strong>.
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button disabled={loading} onClick={handleAgregarAListaEspera} className="w-full px-3 py-2 rounded-md bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 transition-colors disabled:opacity-50">
+                  {loading ? 'Ingresando...' : 'Agregar a Lista de Espera'}
+                </button>
               </div>
-
+            </div>
+          ) : (
+            <div className="mt-4">
               {tipoReserva === 'unico' ? (
-                <button disabled={loading} onClick={handleReservarPorEmail} className="w-full mt-2 px-3 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700 transition-colors">
+                <button disabled={loading} onClick={handleReservarPorEmail} className="w-full px-3 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700 transition-colors">
                   Anotar Paciente
                 </button>
               ) : (
-                <div className="mt-2 space-y-2">
-                  <label className="text-xs text-slate-500 block">Fecha de fin (YYYY-MM-DD)</label>
-                  <input value={fechaFin} onChange={(e) => setFechaFin(e.target.value)} type="date" className="w-full p-2 border border-slate-200 rounded-md text-sm" />
-                  <button disabled={loading} onClick={handleReservarFijosPorEmail} className="w-full px-3 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700 transition-colors">
-                    Anotar turnos fijos
-                  </button>
-                </div>
+                <button disabled={loading} onClick={handleReservarFijosPorEmail} className="w-full px-3 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700 transition-colors">
+                  Anotar turnos fijos
+                </button>
               )}
-            </>
+            </div>
           )}
         </div>
       )}
@@ -349,7 +402,6 @@ export default function TabInscriptos({ detalle, fecha, esAdmin, estaLleno = fal
         )}
       </div>
 
-      {/* Modales y Diálogos */}
       <ReprogramarReservaModal abierto={reprogramarReservaId !== null} reservaId={reprogramarReservaId} fechaActual={fecha} tipoActividadId={detalle.tipoActividadId ?? null} actividadNombre={detalle.actividad} presencial onClose={() => setReprogramarReservaId(null)} onReprogramado={async () => { setReprogramarReservaId(null); if (onReservaCreada) await onReservaCreada() }} />
       
       {cancelarReservaId !== null && (
