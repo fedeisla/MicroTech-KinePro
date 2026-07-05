@@ -30,6 +30,9 @@ export const listaEsperaService = {
       body: JSON.stringify({ email, turnoInicialId, fechasString, prioridad })
     });
   },
+ obtenerMisEstados: async (): Promise<any[]> => {
+    return apiFetch('/lista-espera/mis-estados');
+  },
 
   // DELETE: Cancelar solicitud
   cancelar: async (id: number) => {

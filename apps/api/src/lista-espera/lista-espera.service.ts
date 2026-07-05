@@ -12,6 +12,50 @@ export class ListaEsperaService {
   // ─── MÉTODOS DE CONSULTA Y ESTADO ───────────────────────────────────
   // ====================================================================
 
+  async obtenerEstadosPaciente(pacienteId: number) {
+    // 1. Buscamos TODAS las solicitudes activas del paciente
+    const esperas = await this.prisma.listaEspera.findMany({
+      where: {
+        paciente_id: pacienteId,
+        estado: { in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO] }
+      },
+      // Hacemos el include completo para que el frontend tenga los datos de la actividad
+      include: { 
+        turno: {
+          include: { tipoActividad: true }
+        } 
+      },
+      orderBy: { fecha_anotacion: 'desc' }
+    });
+
+    if (!esperas || esperas.length === 0) return [];
+
+    // 2. Calculamos las personas por delante para CADA UNA de las solicitudes
+    const resultados = await Promise.all(
+      esperas.map(async (espera) => {
+        const personasAdelante = await this.prisma.listaEspera.count({
+          where: {
+            turno_id: espera.turno_id,
+            estado: { in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO] },
+            OR: [
+              { 
+                prioridad: { lt: espera.prioridad } 
+              },
+              { 
+                prioridad: espera.prioridad,
+                fecha_anotacion: { lt: espera.fecha_anotacion } 
+              }
+            ]
+          }
+        });
+
+        return { ...espera, personasAdelante };
+      })
+    );
+
+    return resultados;
+  }
+
  async obtenerEstadoPaciente(pacienteId: number) {
     const espera = await this.prisma.listaEspera.findFirst({
       where: {
@@ -52,6 +96,18 @@ export class ListaEsperaService {
     const turno = await this.prisma.turno.findUnique({ where: { id: turnoId } });
     if (!turno) throw new NotFoundException('El turno no existe.');
 
+    
+    const hoy = new Date();
+    const fechaTurno = new Date(turno.fecha);
+    const esMismoDia = 
+      hoy.getUTCFullYear() === fechaTurno.getUTCFullYear() &&
+      hoy.getUTCMonth() === fechaTurno.getUTCMonth() &&
+      hoy.getUTCDate() === fechaTurno.getUTCDate();
+
+    if (esMismoDia) {
+      throw new BadRequestException('No es posible anotarse en la lista de espera para turnos del día de hoy.');
+    }
+
     const existente = await this.prisma.listaEspera.findFirst({
       where: {
         turno_id: turnoId,
@@ -59,7 +115,10 @@ export class ListaEsperaService {
         estado: { in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO] }
       }
     });
-    if (existente) throw new BadRequestException('El paciente ya se encuentra registrado en la lista de espera');
+    
+    if (existente) {
+      throw new BadRequestException('El paciente ya se encuentra registrado en la lista de espera');
+    }
 
     const config = await this.prisma.configuracionSistema.findUnique({ where: { id: 1 } });
     const porcentaje = config?.porcentajeListaEspera || 20;
@@ -79,7 +138,6 @@ export class ListaEsperaService {
       data: { turno_id: turnoId, paciente_id: pacienteId, prioridad }
     });
   }
-
   // ====================================================================
   // ─── INSCRIPCIÓN FIJA (BLOQUES/GRUPOS) ──────────────────────────────
   // ====================================================================
