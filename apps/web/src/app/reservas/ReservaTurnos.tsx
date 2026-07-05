@@ -71,6 +71,8 @@ export default function ReservaTurnos() {
   const reservaIdsGrupoEsperaRef = useRef<number[] | null>(null);
   const grupoIdEsperaRef = useRef<string | number | null>(null);
 
+  const [faltaDisponibilidad, setFaltaDisponibilidad] = useState(false);
+
   const handleCancelarEspera = async () => {
     if (!solicitudEspera) return;
     setCargandoCancelacion(true);
@@ -85,7 +87,7 @@ export default function ReservaTurnos() {
     }
   };
 
-  const handleResponderNotificacion = async (acepta: boolean) => {
+ const handleResponderNotificacion = async (acepta: boolean) => {
     if (!solicitudEspera) return;
     setCargandoCancelacion(true);
 
@@ -101,7 +103,7 @@ export default function ReservaTurnos() {
         return;
       }
 
-      toast.info('Aceptando turno y abriendo MercadoPago...', { duration: 2000 });
+      toast.info('Procesando confirmación...', { duration: 2000 });
 
       const resReserva = await listaEsperaService.responderNotificacion(
         solicitudEspera.id, 
@@ -109,48 +111,93 @@ export default function ReservaTurnos() {
         solicitudEspera.turnoId
       );
 
-      if (!resReserva || !resReserva.reservaId) {
+      // 1. Detectamos si es un turno fijo evaluando si el backend devolvió un arreglo de reservaIds
+      const esFijo = Array.isArray(resReserva.reservaIds) && resReserva.reservaIds.length > 0;
+
+      if (!resReserva || (!resReserva.reservaId && !esFijo)) {
         throw new Error('El servidor no devolvió el ID de la reserva para generar el pago.');
       }
+      
+      if (resReserva.montoTotal !== undefined) {
+        const formatear = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        let msgPago = `Total a abonar en Mercado Pago: $${formatear(resReserva.montoTotal)}.`;
+        
+        if (resReserva.aplicaDescuento) {
+          msgPago += ` (Incluye ${resReserva.porcentajeAplicado}% de descuento por buena asistencia )`;
+        }
+        
+        toast.success(resReserva.message); 
+        toast.info(msgPago, { duration: 5000 });
+      } else {
+        toast.info('Abriendo Mercado Pago...', { duration: 2000 });
+      }
 
+      // 2. Generamos la preferencia de pago según el tipo de reserva
       let pref;
       try {
-        pref = await crearPreferenceMP(resReserva.reservaId);
+        if (esFijo) {
+          pref = await crearPreferenceMPFijo(resReserva.reservaIds!); // Agregamos "!"
+        } else {
+          pref = await crearPreferenceMP(resReserva.reservaId!); // Agregamos "!"
+        }
       } catch (mpError) {
-        await cancelarPagoMP(resReserva.reservaId).catch(() => {});
+        if (esFijo) await cancelarPagoMPFijo(resReserva.reservaIds!).catch(() => {}); // Agregamos "!"
+        else await cancelarPagoMP(resReserva.reservaId!).catch(() => {}); // Agregamos "!"
+        
         toast.error('No se pudo conectar con MercadoPago, intente nuevamente', { duration: 5000 });
         return;
       }
 
       if (!pref.init_point) {
-        await cancelarPagoMP(resReserva.reservaId).catch(() => {});
+        if (esFijo) await cancelarPagoMPFijo(resReserva.reservaIds!).catch(() => {}); // Agregamos "!"
+        else await cancelarPagoMP(resReserva.reservaId!).catch(() => {}); // Agregamos "!"
+        
         toast.error('No se pudo generar el link de pago.', { duration: 5000 });
         return;
       }
 
-      const mpWindow = window.open(pref.init_point, '_blank');
+     const mpWindow = window.open(pref.init_point, '_blank');
       if (!mpWindow) {
-        await cancelarPagoMP(resReserva.reservaId).catch(() => {});
+        if (esFijo) await cancelarPagoMPFijo(resReserva.reservaIds!).catch(() => {});
+        else await cancelarPagoMP(resReserva.reservaId!).catch(() => {});
+        
         toast.error('El navegador bloqueó la ventana. Habilitá pop-ups y reintentá.', { duration: 5000 });
         return;
       }
 
       setEsperandoPago(true);
       setPagoConfirmado(false);
-      reservaIdEsperaRef.current = resReserva.reservaId;
+      
+      // 3. Guardamos los IDs correspondientes en las Refs para poder cancelarlos o verificarlos
+      if (esFijo) {
+        reservaIdsGrupoEsperaRef.current = resReserva.reservaIds!;
+        grupoIdEsperaRef.current = (pref as any).grupoId; // Forzamos el tipo con "any" para evitar el error
+      } else {
+        reservaIdEsperaRef.current = resReserva.reservaId!;
+      }
 
       intervaloRef.current = setInterval(async () => {
         try {
-          if (resReserva?.reservaId === undefined) {
-            toast.error('No se pudo iniciar el proceso de verificación: ID de reserva faltante.');
-            return;
+          // 4. Verificamos el pago con el endpoint correspondiente
+          let r;
+          if (esFijo) {
+            r = await verificarPagoMPFijo((pref as any).grupoId); // Forzamos el tipo acá también
+          } else {
+            r = await verificarPagoMP(resReserva.reservaId!);
           }
-          const r = await verificarPagoMP(resReserva.reservaId);
+
           if (r.status === 'ok') {
             if (intervaloRef.current) clearInterval(intervaloRef.current);
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            
             setEsperandoPago(false); 
             setSolicitudEspera(null); 
+            
+            // Limpiar refs
+            reservaIdsGrupoEsperaRef.current = null;
+            grupoIdEsperaRef.current = null;
+            reservaIdEsperaRef.current = null;
+            
             toast.success('¡Pago confirmado por MercadoPago! Tu turno está reservado.');
           } else if (r.status === 'cancelado') {
             if (intervaloRef.current) clearInterval(intervaloRef.current);
@@ -171,10 +218,18 @@ export default function ReservaTurnos() {
       timeoutRef.current = setTimeout(async () => {
         if (intervaloRef.current) clearInterval(intervaloRef.current);
         if (!pagoConfirmado) {
-          if (resReserva?.reservaId) {
-            await cancelarPagoMP(resReserva.reservaId).catch(() => {});
+          // 5. Cancelación por timeout adaptada
+          if (esFijo) {
+            await cancelarPagoMPFijo(resReserva.reservaIds!).catch(() => {});
+            reservaIdsGrupoEsperaRef.current = null;
+            grupoIdEsperaRef.current = null;
+          } else {
+            if (resReserva?.reservaId) {
+              await cancelarPagoMP(resReserva.reservaId!).catch(() => {});
+            }
+            reservaIdEsperaRef.current = null;
           }
-          reservaIdEsperaRef.current = null;
+          
           setEsperandoPago(false);
           toast.error('Tiempo agotado para pagar. La oportunidad fue cancelada y pasará al siguiente en la lista.', { duration: 5000 });
         }
@@ -306,6 +361,7 @@ export default function ReservaTurnos() {
       resReserva = await crearReserva(inputReserva);
     } catch (reservaError: any) {
       toast.error(reservaError.message || 'No se pudo crear la reserva', { duration: 5000 });
+     
       return;
     }
 

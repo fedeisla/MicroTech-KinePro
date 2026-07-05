@@ -21,20 +21,20 @@ export const listaEsperaService = {
 
 
   // POST: Inscripción fija para usuario logueado
-  inscribirTurnoFijoVirtual: async (turnoIds: number[]) => {
-    return apiFetch('/lista-espera/admin/inscribir-fijo', {
-      method: 'POST',
-      body: JSON.stringify({ turnoIds })
-    });
-  },
+ inscribirTurnoFijoVirtual: async (turnoId: number, fechasString: string[]) => {
+  return apiFetch('/lista-espera/inscribir-fijo', { // La ruta que pusiste en tu Controller
+    method: 'POST',
+    body: JSON.stringify({ turnoId, fechasString })
+  });
+},
 
   // POST: Inscripción fija para admin/presencial (vía email)
-  inscribirTurnoFijoPresencial: async (email: string, turnoIds: number[]) => {
-    return apiFetch('/lista-espera/fijo/presencial', {
-      method: 'POST',
-      body: JSON.stringify({ email, turnoIds })
-    });
-  },
+  inscribirTurnoFijoPresencial: async (email: string, turnoId: number, fechasString: string[]) => {
+  return apiFetch('/lista-espera/fijo/presencial', {
+    method: 'POST',
+    body: JSON.stringify({ email, turnoId, fechasString })
+  });
+},
 
 
 
@@ -46,10 +46,23 @@ export const listaEsperaService = {
   },
 
   // PATCH: Responder a la notificación (Aceptar/Rechazar)
-  responderNotificacion: async (id: number, acepta: boolean, turnoId: number): Promise<{ message?: string; reservaId?: number; estado?: string }> => { 
+ responderNotificacion: async (
+    id: number, 
+    acepta: boolean, 
+    turnoId: number
+  ): Promise<{ 
+    message?: string; 
+    reservaIds?: number[];
+    reservaId?: number; 
+    estado?: string;
+    montoTotal?: number;
+    aplicaDescuento?: boolean;
+    porcentajeAplicado?: number;
+  }> => {
+    
     return apiFetch(`/lista-espera/${id}/responder`, {
-      method: 'PATCH',
-      body: JSON.stringify({ acepta, turnoId }),
+      method: 'PATCH', 
+      body: JSON.stringify({ acepta, turnoId }) 
     });
   },
 

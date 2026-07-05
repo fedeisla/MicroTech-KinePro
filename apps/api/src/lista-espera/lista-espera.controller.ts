@@ -30,10 +30,13 @@ export class ListaEsperaController {
   }
   
   // --- VIRTUAL (Paciente - usa su token) ---
-  @Post('inscribir-fijo')
-  async inscribirFijo(@Req() req, @Body() body: { turnoIds: number[] }) {
-    // Usamos el ID del paciente del token
-    return await this.listaEsperaService.inscribirTurnoFijoVirtual(req.user.pacienteId, body.turnoIds);
+ @Post('inscribir-fijo')
+  async inscribirFijo(@Req() req, @Body() body: { turnoId: number, fechasString: string[] }) {
+    return await this.listaEsperaService.inscribirTurnoFijoVirtual(
+      req.user.pacienteId, 
+      body.turnoId, 
+      body.fechasString 
+    );
   }
 
 
@@ -43,15 +46,9 @@ export class ListaEsperaController {
   }
 
   @Patch(':id/responder')
-  async responderNotificacion(@Param('id') id: string, @Body() body: { acepta: boolean; turnoId: number }) {
-    const resultado = await this.listaEsperaService.confirmarTurno(+id, body.acepta);
-    
-    // Si el paciente rechazó, avisamos al motor asincrónico para que busque a otro
-    if (!body.acepta) {
-      this.eventEmitter.emit('turno.liberado', { turnoId: body.turnoId });
-    }
-    
-    return resultado;
+  async responderNotificacion( @Param('id') id: string,  @Body() body: { acepta: boolean; turnoId?: number }) 
+  {
+    return await this.listaEsperaService.confirmarTurno(+id, body.acepta);
   }
 
   @Get('mi-estado')
@@ -82,9 +79,9 @@ export class ListaEsperaController {
   }
   
   // --- PRESENCIAL (Admin - busca por email) ---
-  @Post('admin/inscribir-fijo')
+ /* @Post('admin/inscribir-fijo')
   async inscribirFijoAdmin(@Body() body: { turnoIds: number[]; email: string }) {
     // Usamos el email enviado por el admin
     return await this.listaEsperaService.inscribirTurnoFijoPresencial(body.email, body.turnoIds);
-  }
+  }*/
 }

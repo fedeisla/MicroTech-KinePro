@@ -75,32 +75,55 @@ export class ListaEsperaService {
   // ─── INSCRIPCIÓN FIJA (BLOQUES/GRUPOS) ──────────────────────────────
   // ====================================================================
 
-  async inscribirTurnoFijoVirtual(pacienteId: number, turnoIds: number[]) {
-    return await this._registrarBloqueFijo(pacienteId, turnoIds);
-  }
+ 
 
-  async inscribirTurnoFijoPresencial(email: string, turnoIds: number[]) {
+  /*async inscribirTurnoFijoPresencial(email: string, turnoIds: number[]) {
     const paciente = await this.prisma.paciente.findFirst({
       where: { usuario: { email } }
     });
     if (!paciente) throw new NotFoundException('Paciente no encontrado');
     
     return await this._registrarBloqueFijo(paciente.id, turnoIds);
+  }*/
+async inscribirTurnoFijoVirtual(pacienteId: number, turnoInicialId: number, fechasString: string[]) {
+    return await this._registrarBloqueFijo(pacienteId, turnoInicialId, fechasString);
   }
 
-  private async _registrarBloqueFijo(pacienteId: number, turnoIds: number[]) {
-    // 1. Validar ocupación real de los turnos
-    const turnos = await this.prisma.turno.findMany({
-      where: { id: { in: turnoIds } },
-      select: { id: true, cantidad_inscriptos: true, capacidad: true }
+  private async _registrarBloqueFijo(pacienteId: number, turnoInicialId: number, fechasString: string[]) {
+    
+    // 1. Buscar el turno base para obtener actividad y horario (Igual que en reservas fijas)
+    const turnoBase = await this.prisma.turno.findUnique({
+      where: { id: turnoInicialId },
     });
 
+    if (!turnoBase) {
+      throw new BadRequestException('El turno inicial seleccionado no existe');
+    }
+
+    // 2. Buscar en la BD todos los turnos del bloque (Trabaja idéntico a reservas fijas)
+    const turnos = await this.prisma.turno.findMany({
+      where: {
+        tipoActividad_id: turnoBase.tipoActividad_id,
+        hora_inicio: turnoBase.hora_inicio, 
+        fecha: { in: fechasString.map((fecha) => this.parseFechaYYYYMMDD(fecha)) },
+      },
+    });
+
+    if (turnos.length !== fechasString.length) {
+      throw new BadRequestException('Algunos de los turnos del bloque no se encontraron en la base de datos');
+    }
+
+    // Extraemos los IDs de todo el bloque
+    const turnoIds = turnos.map(t => t.id);
+
+    // 3. Validar ocupación: Acá arranca el flujo si ALGUNO de los turnos que trajimos está lleno
     const hayAlgunoLleno = turnos.some(t => t.cantidad_inscriptos >= t.capacidad);
+    
     if (!hayAlgunoLleno) {
       throw new BadRequestException('Para solicitar un turno fijo, al menos una de las fechas debe estar llena.');
     }
 
-    // 2. Validar que no tenga inscripción activa en estos turnos
+    // 4. Validar que no tenga inscripción activa en estos turnos
     const existente = await this.prisma.listaEspera.findFirst({
       where: {
         paciente_id: pacienteId,
@@ -110,7 +133,7 @@ export class ListaEsperaService {
     });
     if (existente) throw new BadRequestException('El paciente ya tiene una solicitud activa en uno de estos turnos.');
 
-    // 3. Crear bloque
+    // 5. Crear bloque
     const grupoId = crypto.randomUUID(); 
     return await this.prisma.$transaction(
       turnoIds.map(tid => 
@@ -136,37 +159,127 @@ export class ListaEsperaService {
     return await this.prisma.listaEspera.update({ where: { id }, data: { estado: EstadoListaEspera.CANCELADO } });
   }
 
-  async confirmarTurno(id: number, acepta: boolean) {
-    const espera = await this.prisma.listaEspera.findUnique({ where: { id } });
-    if (!espera || espera.estado !== EstadoListaEspera.NOTIFICADO) {
+ async confirmarTurno(id: number, acepta: boolean) {
+    // 1. Buscar la solicitud de lista de espera inicial
+    const esperaInicial = await this.prisma.listaEspera.findUnique({ where: { id } });
+    
+    if (!esperaInicial || esperaInicial.estado !== EstadoListaEspera.NOTIFICADO) {
       throw new BadRequestException('No tienes turnos pendientes de confirmación válidos.');
     }
 
+    // 2. Determinar si es parte de un bloque de turnos fijos
+    const solicitudesAProcesar = esperaInicial.grupo_fijo_id
+      ? await this.prisma.listaEspera.findMany({
+          where: { 
+            grupo_fijo_id: esperaInicial.grupo_fijo_id,
+            estado: { in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO] }
+          }
+        })
+      : [esperaInicial];
+
+    const listaEsperaIds = solicitudesAProcesar.map(s => s.id);
+    const turnoIds = solicitudesAProcesar.map(s => s.turno_id);
+    const pacienteId = esperaInicial.paciente_id;
+
+    // 3. Caso: El paciente RECHAZA el turno o el bloque fijo
     if (!acepta) {
-      await this.prisma.listaEspera.update({ where: { id }, data: { estado: EstadoListaEspera.CANCELADO } });
-      this.eventEmitter.emit('turno.liberado', { turnoId: espera.turno_id });
-      return { message: 'Turno rechazado correctamente.' };
+      await this.prisma.listaEspera.updateMany({
+        where: { id: { in: listaEsperaIds } },
+        data: { estado: EstadoListaEspera.CANCELADO }
+      });
+
+      for (const turnoId of turnoIds) {
+        this.eventEmitter.emit('turno.liberado', { turnoId });
+      }
+
+      return { message: esperaInicial.grupo_fijo_id ? 'Bloque de turnos fijos rechazado correctamente.' : 'Turno rechazado correctamente.' };
     }
 
+    // 4. Lógica de Descuentos (Verificamos historial antes de la transacción)
+    
+    // a) Contar cancelaciones y ausencias
+    const cancelaciones = await this.prisma.reserva.count({
+      where: { 
+        paciente_id: pacienteId, 
+        estado: { in: [EstadoReserva.CANCELADA, EstadoReserva.AUSENTE] } 
+      }
+    });
+
+    // b) Contar reprogramaciones totales
+    const reservasConReprogramacion = await this.prisma.reserva.findMany({
+      where: { paciente_id: pacienteId, cant_reprogramaciones: { gt: 0 } },
+      select: { cant_reprogramaciones: true }
+    });
+    const totalReprogramaciones = reservasConReprogramacion.reduce((acc, curr) => acc + curr.cant_reprogramaciones, 0);
+
+    // c) Traer el porcentaje de la tabla ConfiguracionDescuento
+    const configDesc = await this.prisma.configuracionDescuento.findFirst();
+    const porcentajeConfigurado = configDesc?.porcentaje || 0;
+
+    // d) Evaluar si aplica
+    const aplicaDescuento = cancelaciones < 2 && totalReprogramaciones < 2;
+    const porcentajeFinal = aplicaDescuento ? porcentajeConfigurado : 0;
+
+
+    // 5. Caso: El paciente ACEPTA (Ejecución en Transacción)
     return await this.prisma.$transaction(async (tx) => {
-      const nuevaReserva = await tx.reserva.create({
-        data: {
-          turno_id: espera.turno_id,
-          paciente_id: espera.paciente_id,
-          fecha_reserva: new Date(),
-          estado: EstadoReserva.PENDIENTE
+      
+      const reservaIds: number[] = [];
+
+      // A. Obtenemos los precios de los turnos para calcular el subtotal
+      const turnosData = await tx.turno.findMany({
+        where: { id: { in: turnoIds } },
+        select: { 
+          tipoActividad: { 
+            select: { precio: true } 
+          } 
         }
       });
+
+      const subtotal = turnosData.reduce((acc, t) => acc + (Number(t.tipoActividad.precio) || 0), 0);
       
-      await tx.listaEspera.update({ where: { id }, data: { estado: EstadoListaEspera.ASIGNADO } });
-      await tx.turno.update({
-        where: { id: espera.turno_id },
-        data: { cantidad_inscriptos: { increment: 1 } }
+      // B. Aplicamos el descuento calculado previamente
+      const montoTotal = subtotal - (subtotal * (Number(porcentajeFinal) / 100));
+
+      // C. Creamos las reservas reales y capturamos sus IDs
+      for (const solicitud of solicitudesAProcesar) {
+        const nuevaReserva = await tx.reserva.create({
+          data: {
+            turno_id: solicitud.turno_id,
+            paciente_id: solicitud.paciente_id,
+            fecha_reserva: new Date(),
+            estado: EstadoReserva.PENDIENTE
+          }
+        });
+        reservaIds.push(nuevaReserva.id);
+      }
+
+      // D. Actualizamos el estado de la lista de espera
+      await tx.listaEspera.updateMany({
+        where: { id: { in: listaEsperaIds } },
+        data: { estado: EstadoListaEspera.ASIGNADO }
       });
-      return { reservaId: nuevaReserva.id, estado: nuevaReserva.estado };
+
+      // E. Incrementamos los inscriptos de los turnos correspondientes
+      for (const turnoId of turnoIds) {
+        await tx.turno.update({
+          where: { id: turnoId },
+          data: { cantidad_inscriptos: { increment: 1 } }
+        });
+      }
+
+      // F. Retornamos toda la data estructurada para el frontend
+      return {
+        message: esperaInicial.grupo_fijo_id ? 'Bloque de turnos fijos confirmado con éxito.' : 'Turno confirmado con éxito.',
+        cantidadReservas: solicitudesAProcesar.length,
+        reservaIds: reservaIds, // Todos los IDs (por si armás un link de MP que englobe múltiples items)
+        reservaId: reservaIds[0], // El primer ID (para mantener compatibilidad con tu código del frontend actual)
+        montoTotal: montoTotal,
+        aplicaDescuento: aplicaDescuento,
+        porcentajeAplicado: porcentajeFinal
+      };
     });
   }
-
   async obtenerListaParaAdmin(turnoId: number) {
     return await this.prisma.listaEspera.findMany({
       where: { 
@@ -185,4 +298,18 @@ export class ListaEsperaService {
     if (!paciente) throw new NotFoundException(`No se encontró un paciente registrado con el email: ${email}`);
     return this.inscribirPaciente(turnoId, paciente.id, prioridad);
   }
+
+
+
+   private parseFechaYYYYMMDD(fecha: string): Date {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fecha);
+    if (!m) {
+      throw new BadRequestException('La fecha debe estar en formato YYYY-MM-DD');
+    }
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const day = Number(m[3]);
+    return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+  }
+
 }

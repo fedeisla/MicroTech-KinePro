@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fechasMismoDiaSemana, formatearFechaLocal, parseFechaLocal } from '@/lib/fechas';
 import { toast } from 'sonner';
-// ✅ CORRECCIÓN 3: Se agregó TicketPercent al import
 import { ArrowLeft, CheckCircle2, AlertCircle, ClipboardList, TicketPercent } from 'lucide-react';
 import { RangoHorarioBackend, Actividad } from '@/types/turno';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -21,7 +20,7 @@ interface Props {
   setRangoSeleccionado: (rango: RangoHorarioBackend | null) => void;
   actividadSeleccionada: Actividad | null;
   setActividadSeleccionada: (act: Actividad | null) => void;
-  handleConfirmarReservaFija: (fechas: Date[]) => void; 
+  handleConfirmarReservaFija: (fechas: Date[]) => Promise<void>; 
   adminMode?: boolean;
   adminEmail?: string;
   setAdminEmail?: (email: string) => void;
@@ -38,9 +37,11 @@ export default function PanelMensual({
   const [prioridadEspera, setPrioridadEspera] = useState<number>(2);
   const [porcentajeDescuento, setPorcentajeDescuento] = useState(0);
   
-  // ✅ CORRECCIÓN 2: Se agregaron los estados faltantes
   const [precioUnitario, setPrecioUnitario] = useState(0);
   const [aplicaDescuento, setAplicaDescuento] = useState(false);
+
+  const [cargando, setCargando] = useState(false);
+  const [faltaDisponibilidad, setFaltaDisponibilidad] = useState(false);
 
   const { usuario } = useAuth();
 
@@ -56,18 +57,46 @@ export default function PanelMensual({
 
   const fechasCalculadas = calcularFechasFijas();
 
-  const handleAgregarAListaEspera = async () => {
+  // Verifica si algún día calculado choca con los diasLlenos
+  const hayConflictoDeCupos = fechasCalculadas.some(fecha => diasLlenos.includes(fecha.getDate()));
+  
+  // Mostramos Prioridad 1 si la API nos rebotó O si el frontend ya detectó que un día (ej. el 15) está lleno
+  const mostrarPrioridad1 = faltaDisponibilidad || hayConflictoDeCupos;
+
+  const handleAgregarAListaEspera = async (prioridad: number = 2) => {
+    if (!actividadSeleccionada) return;
+
     try {
-      const turnoIds = [actividadSeleccionada!.id]; 
+      
+      const fechasString = fechasCalculadas.map(f => formatearFechaLocal(f));
+      
       if (adminMode) {
         if (!adminEmail) return toast.error('Se requiere email del paciente');
-        await listaEsperaService.inscribirTurnoFijoPresencial(adminEmail, turnoIds);
+        // Le pasás el email, el ID del turno inicial, y las fechas generadas
+        await listaEsperaService.inscribirTurnoFijoPresencial(adminEmail, actividadSeleccionada.id, fechasString);
       } else {
-        await listaEsperaService.inscribirTurnoFijoVirtual(turnoIds);
+        await listaEsperaService.inscribirTurnoFijoVirtual(actividadSeleccionada.id, fechasString);
       }
-      toast.success('Solicitud agregada a la lista de espera');
+      
+      toast.success(`Solicitud agregada a la lista de espera (Prioridad ${prioridad})`);
+      setFaltaDisponibilidad(false);
     } catch (err: any) {
       toast.error('Error al agregar a lista de espera', { description: err.message });
+    }
+  };
+
+  const ejecutarReservaFija = async () => {
+    setCargando(true);
+    setFaltaDisponibilidad(false);
+    try {
+      await handleConfirmarReservaFija(fechasCalculadas);
+    } catch (err: any) {
+      setFaltaDisponibilidad(true);
+      toast.error('No hay cupo disponible en todas las fechas.', {
+        description: 'Podés anotarte en la lista de espera.'
+      });
+    } finally {
+      setCargando(false);
     }
   };
 
@@ -108,21 +137,9 @@ export default function PanelMensual({
   }, [adminMode, adminEmail, usuario?.email]);
 
   const handleSiguiente = () => setPasoConfig([2, 1]);
-  const handleVolver = () => setPasoConfig([1, -1]);
-
-  const variantesAnimacion = {
-    entrar: (direccion: number) => ({
-      x: direccion > 0 ? 50 : -50,
-      opacity: 0
-    }),
-    centro: {
-      x: 0,
-      opacity: 1
-    },
-    salir: (direccion: number) => ({
-      x: direccion > 0 ? -50 : 50,
-      opacity: 0
-    })
+  const handleVolver = () => {
+    setPasoConfig([1, -1]);
+    setFaltaDisponibilidad(false); 
   };
 
   return (
@@ -166,7 +183,7 @@ export default function PanelMensual({
               )}
               
               <button 
-                onClick={() => setPasoConfig([2, 1])} 
+                onClick={handleSiguiente} 
                 disabled={!actividadSeleccionada} 
                 className="w-full mt-auto py-3 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-colors disabled:bg-slate-200 disabled:text-slate-400"
               >
@@ -177,10 +194,10 @@ export default function PanelMensual({
 
           {paso === 2 && (
             <motion.div key="paso2" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 flex flex-col absolute inset-0 overflow-y-auto">
-              <button onClick={() => setPasoConfig([1, -1])} className="text-sm text-slate-500 mb-4 flex items-center gap-1 hover:text-slate-800"><ArrowLeft className="w-4 h-4" /> Volver</button>
+              <button onClick={handleVolver} className="text-sm text-slate-500 mb-4 flex items-center gap-1 hover:text-slate-800"><ArrowLeft className="w-4 h-4" /> Volver</button>
               
-              {/* ✅ CORRECCIÓN 1: Se reemplazó el ternario roto por un && simple */}
-              {estaLleno && (
+              {/* Ocultamos el cartel de turno sin cupo "base" si ya estamos mostrando el de Prioridad 1 general */}
+              {estaLleno && !mostrarPrioridad1 && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
                   <p className="text-amber-800 font-bold text-sm mb-2 flex items-center gap-2"><AlertCircle className="w-4 h-4" /> ¡Turno sin cupos!</p>
                   <p className="text-xs text-amber-700 mb-3">Estás seleccionando un horario completo. ¿Deseas unirte a la lista de espera?</p>
@@ -188,11 +205,11 @@ export default function PanelMensual({
               )}
 
               {precioUnitario > 0 && fechasCalculadas.length > 0 ? (() => {
-                const formatear = (n: number) =>
-                  n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                const formatear = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 const subtotal = precioUnitario * fechasCalculadas.length;
                 const descuento = aplicaDescuento ? subtotal * (porcentajeDescuento / 100) : 0;
                 const total = subtotal - descuento;
+                
                 return (
                   <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mt-auto mb-6 shadow-sm">
                     <div className="text-sm space-y-1">
@@ -236,16 +253,40 @@ export default function PanelMensual({
                 <input type="date" disabled value={fechaHasta} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-600 cursor-not-allowed" />
               </div>
               
-              <button 
-                onClick={estaLleno ? handleAgregarAListaEspera : () => handleConfirmarReservaFija(fechasCalculadas)}
-                className={`w-full py-3 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 ${estaLleno ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-teal-600 text-white hover:bg-teal-700'}`}
-              >
-                {estaLleno ? (
-                    <><AlertCircle className="w-4 h-4" /> Agregar a Lista de Espera</>
-                ) : (
-                    <><CheckCircle2 className="w-4 h-4" /> Confirmar Reserva</>
-                )}
-              </button>
+              {/* BLOQUE DE PRIORIDAD 1: Aparece inmediatamente si un día de la cadena está lleno */}
+              {mostrarPrioridad1 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+                  <p className="text-amber-800 font-bold text-sm mb-2 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" /> Conflictos de disponibilidad
+                  </p>
+                  <p className="text-xs text-amber-700 mb-3">
+                    Algunos de los días seleccionados ya no tienen cupo disponible. ¿Querés anotarte en la lista de espera de turnos fijos con <strong>Prioridad 1</strong>?
+                  </p>
+                  <button
+                    onClick={() => handleAgregarAListaEspera(1)}
+                    className="w-full py-2 bg-amber-500 text-white rounded-lg font-bold text-sm hover:bg-amber-600 transition-colors flex justify-center items-center gap-2"
+                  >
+                    Ingresar con Prioridad 1
+                  </button>
+                </div>
+              )}
+
+              {/* Si hay lugares disponibles, muestra los botones de reserva normal */}
+              {!mostrarPrioridad1 && (
+                <button 
+                  disabled={cargando}
+                  onClick={estaLleno ? () => handleAgregarAListaEspera(2) : ejecutarReservaFija}
+                  className={`w-full py-3 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 ${estaLleno ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-teal-600 text-white hover:bg-teal-700'}`}
+                >
+                  {cargando ? 'Procesando...' : (
+                    estaLleno ? (
+                        <><AlertCircle className="w-4 h-4" /> Agregar a Lista de Espera</>
+                    ) : (
+                        <><CheckCircle2 className="w-4 h-4" /> Confirmar Reserva</>
+                    )
+                  )}
+                </button>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
