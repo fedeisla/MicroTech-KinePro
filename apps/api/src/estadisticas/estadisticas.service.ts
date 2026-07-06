@@ -71,37 +71,29 @@ export class EstadisticasService {
         estado: { not: EstadoReserva.CANCELADA },
       },
       select: {
-        paciente_id: true,
         turno: {
           select: { tipoActividad_id: true },
         },
       },
     });
 
-    const pacientesPorActividad = new Map<string, Set<number>>();
+    const reservasPorActividad = new Map<number, number>();
 
     reservas.forEach((reserva) => {
       const tipoActividadId = reserva.turno?.tipoActividad_id;
-      if (!tipoActividadId || typeof reserva.paciente_id !== 'number') {
+      if (!tipoActividadId) {
         return;
       }
 
-      const key = `${tipoActividadId}`;
-      if (!pacientesPorActividad.has(key)) {
-        pacientesPorActividad.set(key, new Set<number>());
-      }
-
-      pacientesPorActividad.get(key)!.add(reserva.paciente_id);
+      reservasPorActividad.set(
+        tipoActividadId,
+        (reservasPorActividad.get(tipoActividadId) ?? 0) + 1,
+      );
     });
 
-    const agrupado = Array.from(pacientesPorActividad.entries()).reduce((acc, [tipoActividadId, pacientes]) => {
-      acc[Number(tipoActividadId)] = pacientes.size;
-      return acc;
-    }, {} as Record<number, number>);
-
-    const items = Object.entries(agrupado)
-      .map(([tipoActividadId, cantidad]) => ({
-        actividadId: Number(tipoActividadId),
+    const items = Array.from(reservasPorActividad.entries())
+      .map(([actividadId, cantidad]) => ({
+        actividadId,
         cantidad,
       }))
       .filter((item) => item.cantidad > 0);
