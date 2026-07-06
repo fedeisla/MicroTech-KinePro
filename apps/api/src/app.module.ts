@@ -18,6 +18,8 @@ import { MailModule } from './mail/mail.module';
 import { EstadisticasModule } from './estadisticas/estadisticas.module';
 import { ListaEsperaModule } from './lista-espera/lista-espera.module';
 import { ConfiguracionModule } from './configuracion/configuracion.module';
+import { ConfiguracionListaModule } from './configuracion-lista-espera/configuracion-lista-espera.module';
+
 
 @Module({
   imports: [
@@ -35,7 +37,8 @@ import { ConfiguracionModule } from './configuracion/configuracion.module';
     MailModule,
     EstadisticasModule,
     ListaEsperaModule,
-    ConfiguracionModule
+    ConfiguracionModule,
+    ConfiguracionListaModule
     
   ],
   providers: [

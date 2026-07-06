@@ -8,6 +8,10 @@ import type { TurnoResumen, TurnoEventoMes } from '@/types/turno'
 import CrearTurnoModal from '@/components/turnos/CrearTurnoModal'
 import { Plus } from 'lucide-react'
 import { useRequireRole } from '@/hooks/useAuth'
+import BotonConfiguracion from '@/components/turnos/BotonConfiguracion'
+
+
+
 
 function obtenerFechaHoy(): string {
   const hoy = new Date()
@@ -62,16 +66,28 @@ export default function TurnosPage() {
   return (
     <main className="min-h-screen bg-neutral-bg/40 p-6">
       <div className="mx-auto max-w-6xl">
+        
+        {/* --- CABECERA MODIFICADA AQUÍ --- */}
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold text-kineblue">Turnos</h1>
-          <button
-            onClick={() => setModalCrearAbierto(true)}
-            className="bg-kine-blue hover:bg-kine-blue-deep text-white text-sm font-semibold px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Crear turno
-          </button>
+          
+          {/* Contenedor flex para agrupar ambos botones */}
+          <div className="flex items-center gap-3">
+            
+            {/* 1. Nuestro nuevo botón de configuración */}
+            <BotonConfiguracion />
+            
+            {/* 2. El botón original de crear turno */}
+            <button
+              onClick={() => setModalCrearAbierto(true)}
+              className="bg-kine-blue hover:bg-kine-blue-deep text-white text-sm font-semibold px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm transition-colors h-[40px]"
+            >
+              <Plus className="w-4 h-4" />
+              Crear turno
+            </button>
+          </div>
         </div>
+        {/* -------------------------------- */}
 
         <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
           <section>

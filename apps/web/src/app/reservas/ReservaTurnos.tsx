@@ -249,35 +249,42 @@ export default function ReservaTurnos() {
   };
 
   useEffect(() => {
-    const fetchDiasDisponibles = async () => {
+    const fetchDiasDisponibles = async (isPolling = false) => {
       try {
-        setCargandoDias(true);
-        const respuesta = await getDiasDisponiblesDelMes(mesActual + 1, anioActual);
+        if (!isPolling) setCargandoDias(true); 
         
+        const respuesta = await getDiasDisponiblesDelMes(mesActual + 1, anioActual);
         setDiasConCupo(respuesta.diasConCupo);
         setDiasLlenos(respuesta.diasLlenos);
       } catch (error) {
-        toast.error('Error al cargar el calendario', {
-          description: 'No pudimos conectarnos con el servidor. Por favor, intentá de nuevo en unos minutos.',
-          duration: 4000,
-        });
+        if (!isPolling) {
+          toast.error('Error al cargar el calendario');
+        }
         setDiasConCupo([]);
         setDiasLlenos([]); 
       } finally {
-        setCargandoDias(false);
+        if (!isPolling) setCargandoDias(false);
       }
     };
 
+   
     fetchDiasDisponibles();
     resetSeleccion();
+
+    const intervaloDias = setInterval(() => {
+      fetchDiasDisponibles(true); 
+    }, 15000);
+
+    return () => clearInterval(intervaloDias);
   }, [mesActual, anioActual]);
 
-  useEffect(() => {
-    const fetchHorarios = async () => {
+useEffect(() => {
+    const fetchHorarios = async (isPolling = false) => {
       if (!diaPrincipal) return; 
       
       try {
-        setCargandoHorarios(true);
+        if (!isPolling) setCargandoHorarios(true);
+        
         const mesFormateado = String(mesActual + 1).padStart(2, '0');
         const diaFormateado = String(diaPrincipal).padStart(2, '0'); 
         const fechaConsulta = `${anioActual}-${mesFormateado}-${diaFormateado}`;
@@ -286,25 +293,29 @@ export default function ReservaTurnos() {
         setHorariosDelDia(turnosAgrupados);
       } catch (error) {
         setHorariosDelDia([]);
-        toast.error('Error al cargar los horarios', {
-          description: 'No pudimos obtener las actividades de este día. Intentá nuevamente.',
-          duration: 4000,
-        });
+        if (!isPolling) {
+          toast.error('Error al cargar los horarios');
+        }
       } finally {
-        setCargandoHorarios(false);
+        if (!isPolling) setCargandoHorarios(false);
       }
     };
 
     fetchHorarios();
-  }, [diaPrincipal, mesActual, anioActual]); 
 
-  // Modificado: Trae las solicitudes y las ORDENA para mostrar la principal
+    const intervaloHorarios = setInterval(() => {
+      fetchHorarios(true);
+    }, 5000);
+
+    return () => clearInterval(intervaloHorarios);
+  }, [diaPrincipal, mesActual, anioActual]);
+
+ 
   useEffect(() => {
     const cargarEstadosEspera = async () => {
       try {
-        const estados = await listaEsperaService.obtenerMisEstados(); // <- Asegurate que este endpoint devuelva array
+        const estados = await listaEsperaService.obtenerMisEstados();
         if (estados && estados.length > 0) {
-          // ORDENAMOS EL ARRAY ANTES DE GUARDARLO
           estados.sort((a: any, b: any) => {
             if (a.estado === 'NOTIFICADO' && b.estado !== 'NOTIFICADO') return -1;
             if (b.estado === 'NOTIFICADO' && a.estado !== 'NOTIFICADO') return 1;
@@ -318,12 +329,17 @@ export default function ReservaTurnos() {
           setSolicitudesEspera([]);
         }
       } catch (e) {
-        console.log("No hay solicitudes de espera activas");
         setSolicitudesEspera([]);
       }
     };
-
+  
     cargarEstadosEspera();
+
+    const intervaloEspera = setInterval(() => {
+      cargarEstadosEspera();
+    }, 10000);
+
+    return () => clearInterval(intervaloEspera);
   }, []);
 
   const mesAnterior = () => {

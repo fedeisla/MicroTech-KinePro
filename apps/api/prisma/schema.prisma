@@ -249,7 +249,7 @@ model Notificacion {
   estado      EstadoNotificacion @default(PENDIENTE)
 }
 
-// 3. NUEVO MODELO: CONFIGURACIÓN DEL SISTEMA
+
 model ConfiguracionSistema {
   id                    Int @id @default(1) 
   porcentajeListaEspera Int @default(20)    
