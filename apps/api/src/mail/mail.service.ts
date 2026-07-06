@@ -230,11 +230,11 @@ export class MailService {
     });
   }
 
-  async sendNotificationEmail(email: string, subject: string, message: string) {
+  async sendNotificationEmail(email: string, subject: string, message: string, html?: string) {
     await this.mailerService.sendMail({
       to: email,
       subject: `KinePro - ${subject}`,
-      html: `
+      html: html ?? `
         <div style="font-family: Arial, sans-serif; color: #1f2937; padding: 20px;">
           <h2 style="color:#0d9488">KinePro</h2>
           <p>${message}</p>

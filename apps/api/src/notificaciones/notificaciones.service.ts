@@ -40,7 +40,7 @@ export class NotificacionesService {
     }));
   }
 
-  async crearNotificacion(datos: { pacienteId: number; reservaId?: number; titulo: string; descripcion: string; tipo: any; canal: any; fechaEnvio?: Date; enviarEmail?: boolean; email?: string }) {
+  async crearNotificacion(datos: { pacienteId: number; reservaId?: number; titulo: string; descripcion: string; tipo: any; canal: any; fechaEnvio?: Date; enviarEmail?: boolean; email?: string; html?: string }) {
     const now = new Date();
     const fechaEnvio = datos.fechaEnvio ?? now;
     const record = await this.prisma.notificacion.create({
@@ -58,7 +58,7 @@ export class NotificacionesService {
 
     if (datos.enviarEmail && datos.email) {
       try {
-        await this.mailService.sendNotificationEmail(datos.email, datos.titulo, datos.descripcion);
+        await this.mailService.sendNotificationEmail(datos.email, datos.titulo, datos.descripcion, datos.html);
         await this.prisma.notificacion.update({
           where: { id: record.id },
           data: { estado: 'ENVIADA', fecha_envio: new Date() } as any,
