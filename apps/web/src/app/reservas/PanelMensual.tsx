@@ -56,11 +56,7 @@ export default function PanelMensual({
   };
 
   const fechasCalculadas = calcularFechasFijas();
-
-  // Verifica si algún día calculado choca con los diasLlenos
   const hayConflictoDeCupos = fechasCalculadas.some(fecha => diasLlenos.includes(fecha.getDate()));
-  
-  // Mostramos Prioridad 1 si la API nos rebotó O si el frontend ya detectó que un día (ej. el 15) está lleno
   const mostrarPrioridad1 = faltaDisponibilidad || hayConflictoDeCupos;
 
   const handleAgregarAListaEspera = async (prioridad: number = 2) => {
@@ -72,7 +68,6 @@ export default function PanelMensual({
       
       if (adminMode) {
         if (!adminEmail) return toast.error('Se requiere email del paciente');
-        // Le pasás el email, el ID del turno inicial, y las fechas generadas
         await listaEsperaService.inscribirTurnoFijoPresencial(adminEmail, actividadSeleccionada.id, fechasString);
       } else {
         await listaEsperaService.inscribirTurnoFijoVirtual(actividadSeleccionada.id, fechasString);

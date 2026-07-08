@@ -10,12 +10,9 @@ export class ConfiguracionListaService {
   constructor(private readonly prisma: PrismaService) {}
 
   async obtenerConfiguracion() {
-    // Buscamos la configuración global (siempre el id 1)
     let config = await this.prisma.configuracionSistema.findUnique({
       where: { id: 1 },
     });
-
-    // Si la base de datos es nueva y no existe, la creamos al vuelo
     if (!config) {
       config = await this.prisma.configuracionSistema.create({
         data: {
@@ -26,15 +23,11 @@ export class ConfiguracionListaService {
         },
       });
     }
-
     return config;
   }
 
   async actualizarConfiguracion(data: UpdateConfiguracionListaDto) {
-    // Nos aseguramos de que exista el registro primero
     await this.obtenerConfiguracion();
-
-    // Actualizamos el registro 1
     return this.prisma.configuracionSistema.update({
       where: { id: 1 },
       data: data,

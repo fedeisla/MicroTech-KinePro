@@ -23,13 +23,12 @@ export const listaEsperaService = {
     });
   },
 
-  // POST: Inscripción fija para admin/presencial (vía email)
-  inscribirTurnoFijoPresencial: async (email: string, turnoInicialId: number, fechasString: string[], prioridad: number) => {
-    return apiFetch('/lista-espera/admin/inscribir-fijo', {
-      method: 'POST',
-      body: JSON.stringify({ email, turnoInicialId, fechasString, prioridad })
-    });
-  },
+ inscribirTurnoFijoPresencial: async (email: string, turnoInicialId: number, fechasString: string[], prioridad?: number) => {
+  return apiFetch('/lista-espera/admin/inscribir-fijo', {
+    method: 'POST',
+    body: JSON.stringify({ email, turnoInicialId, fechasString, prioridad }) 
+  });
+},
  obtenerMisEstados: async (): Promise<any[]> => {
     return apiFetch('/lista-espera/mis-estados');
   },
@@ -65,10 +64,6 @@ export const listaEsperaService = {
   getMiEstado: async () => {
     return apiFetch('/lista-espera/mi-estado');
   },
-
-  // ==========================================================
-  // ─── MÉTODOS DE ADMINISTRADOR ─────────────────────────────
-  // ==========================================================
   
   // GET: Trae la lista de espera de un turno específico
   obtenerListaAdmin: async (turnoId: number): Promise<any[]> => {
