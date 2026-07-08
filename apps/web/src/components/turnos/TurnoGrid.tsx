@@ -1,12 +1,21 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { ChevronDown } from 'lucide-react'
 import type { TurnoResumen, TurnoDetalle, EstadoTurno } from '@/types/turno'
 import { getTurnoById } from '@/services/turnosService'
 import TabInscriptos from './TabInscriptos'
 import TabEspera from './TabEspera'
+import { toast } from 'sonner' // o la librería que uses
+
+import { fechasMismoDiaSemana, parseFechaLocal } from '@/lib/fechas'
+import { tituloYMensajeDesdeApi } from '@/app/Components/InfoDialog'
+import { obtenerPacientes } from '@/services/usuariosService'
+import { cancelarReservaPresencial, chequearDescuento, crearReservaFijaPresencial, crearReservaPresencial } from '@/services/reservasService'
+import { registrarPago } from '@/services/pagosService'
+
+
 
 interface TurnoGridProps {
   fecha: string | null
@@ -184,6 +193,10 @@ function DetalleInscriptos({
 }) {
   const { rol } = useAuth()
   const esAdmin = rol === 'ADMIN' || rol === 'OWNER'
+  
+  // Estado para manejar las pestañas (faltaba en tu código)
+  const [tabActiva, setTabActiva] = useState<'INSCRIPTOS' | 'ESPERA'>('INSCRIPTOS')
+
   const [email, setEmail] = useState('')
   const [tipoReserva, setTipoReserva] = useState<'unico' | 'fijo'>('unico')
   const [fechaFin, setFechaFin] = useState('')
@@ -192,16 +205,18 @@ function DetalleInscriptos({
   const [cancelarReservaId, setCancelarReservaId] = useState<number | null>(null)
   const [cancelando, setCancelando] = useState(false)
   const [metodoPago, setMetodoPago] = useState<'EFECTIVO' | 'TARJETA' | ''>('')
-  const [pacientes, setPacientes] = useState<PacienteOption[]>([])
+  const [pacientes, setPacientes] = useState<any[]>([]) // Idealmente usar PacienteOption[]
   const [aplicaDescuento, setAplicaDescuento] = useState(false)
   const [porcentajeDescuento, setPorcentajeDescuento] = useState(0)
   const [errorDialog, setErrorDialog] = useState<{ titulo: string; mensaje: string } | null>(null)
 
   useEffect(() => {
     if (!esAdmin) return
+    // NOTA: obtenerPacientes debe estar importado
     obtenerPacientes()
-      .then((data) => setPacientes(data))
-      .catch((err) => {
+      .then((data: React.SetStateAction<any[]>) => setPacientes(data))
+      .catch((err: { message: any }) => {
+        // NOTA: toast debe estar importado
         toast.error('No se pudieron cargar los pacientes', { description: err.message })
       })
   }, [esAdmin])
@@ -212,8 +227,9 @@ function DetalleInscriptos({
       setPorcentajeDescuento(0)
       return
     }
+    // NOTA: chequearDescuento debe estar importado
     chequearDescuento(email)
-      .then((res) => {
+      .then((res: { aplica: boolean | ((prevState: boolean) => boolean); porcentaje: React.SetStateAction<number> }) => {
         setAplicaDescuento(res.aplica)
         setPorcentajeDescuento(res.porcentaje)
       })
@@ -228,6 +244,7 @@ function DetalleInscriptos({
   }
 
   const calcularFechasFixas = (fechaInicio: string, fechaFinStr: string): Date[] => {
+    // NOTA: parseFechaLocal y fechasMismoDiaSemana deben estar importados
     const inicio = parseFechaLocal(fechaInicio)
     const fin = parseFechaLocal(fechaFinStr)
     if (fin < inicio) return []
@@ -245,7 +262,6 @@ function DetalleInscriptos({
       const reservaId = resReserva?.reservaId ?? resReserva?.id
 
       if (!reservaId) {
-        // Si el back no devolvió un id usable, igual avisamos
         toast.success('Reserva registrada con éxito')
         setEmail('')
         setMetodoPago('')
@@ -270,7 +286,6 @@ function DetalleInscriptos({
       setLoading(false)
     }
   }
-  
 
   const handleCancelarConfirmado = async () => {
     if (!cancelarReservaId) return
@@ -281,12 +296,13 @@ function DetalleInscriptos({
       setCancelarReservaId(null)
       if (onReservaCreada) await onReservaCreada()
     } catch (err: any) {
-      const detalle = err?.message ?? 'Ocurrió un error inesperado. Intentá de nuevo.'
-      const parsed = tituloYMensajeDesdeApi(detalle)
+      const errorMsg = err?.message ?? 'Ocurrió un error inesperado. Intentá de nuevo.'
+      // NOTA: tituloYMensajeDesdeApi debe estar importado
+      const parsed = tituloYMensajeDesdeApi(errorMsg)
       setCancelarReservaId(null)
       setErrorDialog({
         titulo: parsed.mensaje ? parsed.titulo : 'No se pudo cancelar el turno',
-        mensaje: parsed.mensaje || detalle,
+        mensaje: parsed.mensaje || errorMsg,
       })
     } finally {
       setCancelando(false)
@@ -306,181 +322,13 @@ function DetalleInscriptos({
         return toast.error('La fecha de fin debe ser igual o posterior al turno seleccionado')
       }
 
-      // 1. Crear las reservas fijas (el back las asocia al paciente del email seleccionado)
+      // 1. Crear las reservas fijas 
       const respuesta: any = await crearReservaFijaPresencial(email, detalle.id, fechas)
       toast.success(respuesta.message)
 
       // 2. Registrar el pago de cada reserva creada
       const reservaIds: number[] = respuesta?.reservaIds ?? []
       if (reservaIds.length > 0) {
-        // Calculamos el monto por reserva (con descuento aplicado si corresponde)
-        
-        const precioUnitario = detalle.precio ?? 0
-        const factorDescuento = aplicaDescuento ? (100 - porcentajeDescuento) / 100 : 1
-        const montoPorReserva = precioUnitario * factorDescuento
-
-        let pagosOk = 0
-        let pagosFail = 0
-        for (const rid of reservaIds) {
-          try {
-            await registrarPago({
-              reserva_id: rid,
-              metodo: metodoPago as 'EFECTIVO' | 'TARJETA',
-              monto: montoPorReserva,
-            })
-            pagosOk++
-          } catch (e) {
-            pagosFail++
-          }
-        }
-        if (pagosFail === 0) {
-          toast.success(`Pagos registrados (${pagosOk})`)
-        } else {
-          toast.error(`Se registraron ${pagosOk} pagos, ${pagosFail} fallaron`)
-        }
-      }
-
-      setEmail('')
-      setMetodoPago('')
-      setFechaFin('')
-      if (onReservaCreada) await onReservaCreada()
-    } catch (err: any) {
-      toast.error('No se pudieron crear las reservas', { description: err.message || String(err) })
-    } finally {
-      setLoading(false)
-    }
-  }
-  const [email, setEmail] = useState('')
-  const [tipoReserva, setTipoReserva] = useState<'unico' | 'fijo'>('unico')
-  const [fechaFin, setFechaFin] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [reprogramarReservaId, setReprogramarReservaId] = useState<number | null>(null)
-  const [cancelarReservaId, setCancelarReservaId] = useState<number | null>(null)
-  const [cancelando, setCancelando] = useState(false)
-  const [metodoPago, setMetodoPago] = useState<'EFECTIVO' | 'TARJETA' | ''>('')
-  const [pacientes, setPacientes] = useState<PacienteOption[]>([])
-  const [aplicaDescuento, setAplicaDescuento] = useState(false)
-  const [porcentajeDescuento, setPorcentajeDescuento] = useState(0)
-  const [errorDialog, setErrorDialog] = useState<{ titulo: string; mensaje: string } | null>(null)
-
-  useEffect(() => {
-    if (!esAdmin) return
-    obtenerPacientes()
-      .then((data) => setPacientes(data))
-      .catch((err) => {
-        toast.error('No se pudieron cargar los pacientes', { description: err.message })
-      })
-  }, [esAdmin])
-
-  useEffect(() => {
-    if (tipoReserva !== 'fijo' || !email) {
-      setAplicaDescuento(false)
-      setPorcentajeDescuento(0)
-      return
-    }
-    chequearDescuento(email)
-      .then((res) => {
-        setAplicaDescuento(res.aplica)
-        setPorcentajeDescuento(res.porcentaje)
-      })
-      .catch(() => {
-        setAplicaDescuento(false)
-        setPorcentajeDescuento(0)
-      })
-  }, [email, tipoReserva])
-
-  if (detalle.inscriptos.length === 0 && !esAdmin) {
-    return <p className="text-xs text-neutral-gray">Sin inscriptos en este turno.</p>
-  }
-
-  const calcularFechasFixas = (fechaInicio: string, fechaFinStr: string): Date[] => {
-    const inicio = parseFechaLocal(fechaInicio)
-    const fin = parseFechaLocal(fechaFinStr)
-    if (fin < inicio) return []
-    return fechasMismoDiaSemana(inicio, fin)
-  }
-
-  const handleReservarPorEmail = async () => {
-    try {
-      if (!email) return toast.error('Seleccione un paciente')
-      if (!metodoPago) return toast.error('Debe seleccionar un método de pago para continuar')
-      setLoading(true)
-
-      // 1. Crear la reserva
-      const resReserva: any = await crearReservaPresencial(email, detalle.id)
-      const reservaId = resReserva?.reservaId ?? resReserva?.id
-
-      if (!reservaId) {
-        // Si el back no devolvió un id usable, igual avisamos
-        toast.success('Reserva registrada con éxito')
-        setEmail('')
-        setMetodoPago('')
-        if (onReservaCreada) await onReservaCreada()
-        return
-      }
-
-      // 2. Registrar el pago presencial asociado
-      try {
-        await registrarPago({ reserva_id: reservaId, metodo: metodoPago as 'EFECTIVO' | 'TARJETA' })
-        toast.success('Turno registrado con éxito')
-      } catch (pagoErr: any) {
-        toast.error('No se pudo registrar el turno', { description: pagoErr.message || String(pagoErr) })
-      }
-
-      setEmail('')
-      setMetodoPago('')
-      if (onReservaCreada) await onReservaCreada()
-    } catch (err: any) {
-      toast.error('No se pudo crear la reserva', { description: err.message || String(err) })
-    } finally {
-      setLoading(false)
-    }
-  }
-  
-
-  const handleCancelarConfirmado = async () => {
-    if (!cancelarReservaId) return
-    setCancelando(true)
-    try {
-      const res = await cancelarReservaPresencial(cancelarReservaId)
-      toast.success(res.message)
-      setCancelarReservaId(null)
-      if (onReservaCreada) await onReservaCreada()
-    } catch (err: any) {
-      const detalle = err?.message ?? 'Ocurrió un error inesperado. Intentá de nuevo.'
-      const parsed = tituloYMensajeDesdeApi(detalle)
-      setCancelarReservaId(null)
-      setErrorDialog({
-        titulo: parsed.mensaje ? parsed.titulo : 'No se pudo cancelar el turno',
-        mensaje: parsed.mensaje || detalle,
-      })
-    } finally {
-      setCancelando(false)
-    }
-  }
-
-  const handleReservarFijosPorEmail = async () => {
-    try {
-      if (!email) return toast.error('Seleccione un paciente')
-      if (!metodoPago) return toast.error('Debe seleccionar un método de pago para continuar')
-      if (!fechaFin) return toast.error('Ingrese la fecha de fin')
-      if (!fecha) return toast.error('No se pudo obtener la fecha del turno')
-
-      setLoading(true)
-      const fechas = calcularFechasFixas(fecha, fechaFin)
-      if (fechas.length === 0) {
-        return toast.error('La fecha de fin debe ser igual o posterior al turno seleccionado')
-      }
-
-      // 1. Crear las reservas fijas (el back las asocia al paciente del email seleccionado)
-      const respuesta: any = await crearReservaFijaPresencial(email, detalle.id, fechas)
-      toast.success(respuesta.message)
-
-      // 2. Registrar el pago de cada reserva creada
-      const reservaIds: number[] = respuesta?.reservaIds ?? []
-      if (reservaIds.length > 0) {
-        // Calculamos el monto por reserva (con descuento aplicado si corresponde)
-        
         const precioUnitario = detalle.precio ?? 0
         const factorDescuento = aplicaDescuento ? (100 - porcentajeDescuento) / 100 : 1
         const montoPorReserva = precioUnitario * factorDescuento
@@ -543,7 +391,7 @@ function DetalleInscriptos({
           detalle={detalle} 
           fecha={fecha} 
           esAdmin={esAdmin} 
-          estaLleno={estaLleno} // Lo pasamos como prop a la Tab Inscriptos
+          estaLleno={estaLleno} 
           onReservaCreada={onReservaCreada} 
         />
       )}

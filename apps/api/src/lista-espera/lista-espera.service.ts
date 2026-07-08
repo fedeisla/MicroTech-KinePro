@@ -82,53 +82,60 @@ export class ListaEsperaService {
     return { ...espera, personasAdelante };
   }
 
-  async inscribirPaciente(turnoId: number, pacienteId: number, prioridad: number) {
-    const turno = await this.prisma.turno.findUnique({ where: { id: turnoId } });
-    if (!turno) throw new NotFoundException('El turno no existe.');
+async inscribirPaciente(turnoId: number, pacienteId: number, prioridad: number) {
+  const turno = await this.prisma.turno.findUnique({ where: { id: turnoId } });
+  if (!turno) throw new NotFoundException('El turno no existe.');
 
-    
-    const hoy = new Date();
-    const fechaTurno = new Date(turno.fecha);
-    const esMismoDia = 
-      hoy.getUTCFullYear() === fechaTurno.getUTCFullYear() &&
-      hoy.getUTCMonth() === fechaTurno.getUTCMonth() &&
-      hoy.getUTCDate() === fechaTurno.getUTCDate();
+  //Validar que no tenga reservas activas (CONFIRMADA o PENDIENTE) ese mismo día
+  const reservaMismoDia = await this.prisma.reserva.findFirst({
+    where: {
+      paciente_id: pacienteId,
+      estado: { in: [EstadoReserva.PENDIENTE, EstadoReserva.CONFIRMADA] }, 
+      turno: {
+        fecha: turno.fecha,
+      },
+    },
+  });
 
-    if (esMismoDia) {
-      throw new BadRequestException('No es posible anotarse en la lista de espera para turnos del día de hoy.');
-    }
-
-    const existente = await this.prisma.listaEspera.findFirst({
-      where: {
-        turno_id: turnoId,
-        paciente_id: pacienteId,
-        estado: { in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO] }
-      }
-    });
-    
-    if (existente) {
-      throw new BadRequestException('El paciente ya se encuentra registrado en la lista de espera');
-    }
-
-    const config = await this.prisma.configuracionSistema.findUnique({ where: { id: 1 } });
-    const porcentaje = config?.porcentajeListaEspera || 20;
-    let limiteLista = Math.floor((turno.capacidad * (porcentaje / 100)) / 2);
-
-    if (limiteLista === 0 && turno.capacidad > 0 && porcentaje > 0) limiteLista = 1;
-
-    const ocupacionActual = await this.prisma.listaEspera.count({
-      where: { turno_id: turnoId, prioridad, estado: EstadoListaEspera.PENDIENTE }
-    });
-
-    if (ocupacionActual >= limiteLista) {
-      throw new BadRequestException('La capacidad máxima de la lista está completa.');
-    }
-
-    return await this.prisma.listaEspera.create({
-      data: { turno_id: turnoId, paciente_id: pacienteId, prioridad }
-    });
+  if (reservaMismoDia) {
+    throw new BadRequestException('El paciente ya posee un turno activo para el día seleccionado.');
   }
 
+  //Validar que no esté ya en la lista de espera para CUALQUIER turno de ese mismo día
+  const esperaMismoDia = await this.prisma.listaEspera.findFirst({
+    where: {
+      paciente_id: pacienteId,
+      estado: { in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO] },
+      turno: {
+        fecha: turno.fecha,
+      },
+    },
+  });
+  
+  if (esperaMismoDia) {
+    throw new BadRequestException('El paciente ya se encuentra registrado en una lista de espera para el día seleccionado.');
+  }
+
+  // 3. Lógica de capacidad de la lista
+  const config = await this.prisma.configuracionSistema.findUnique({ where: { id: 1 } });
+  const porcentaje = config?.porcentajeListaEspera || 20;
+  let limiteLista = Math.floor((turno.capacidad * (porcentaje / 100)) / 2);
+
+  if (limiteLista === 0 && turno.capacidad > 0 && porcentaje > 0) limiteLista = 1;
+
+  const ocupacionActual = await this.prisma.listaEspera.count({
+    where: { turno_id: turnoId, prioridad, estado: EstadoListaEspera.PENDIENTE }
+  });
+
+  if (ocupacionActual >= limiteLista) {
+    throw new BadRequestException('La capacidad máxima de la lista está completa.');
+  }
+
+  // Inscripción
+  return await this.prisma.listaEspera.create({
+    data: { turno_id: turnoId, paciente_id: pacienteId, prioridad }
+  });
+}
 
   async inscribirTurnoFijoVirtual(pacienteId: number, turnoInicialId: number, fechasString: string[]) {
 
