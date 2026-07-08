@@ -86,6 +86,8 @@ async inscribirPaciente(turnoId: number, pacienteId: number, prioridad: number) 
   const turno = await this.prisma.turno.findUnique({ where: { id: turnoId } });
   if (!turno) throw new NotFoundException('El turno no existe.');
 
+  this.validarTurnoNoPasado(turno);
+
   //Validar que no tenga reservas activas (CONFIRMADA o PENDIENTE) ese mismo día
   const reservaMismoDia = await this.prisma.reserva.findFirst({
     where: {
@@ -175,6 +177,11 @@ async inscribirPaciente(turnoId: number, pacienteId: number, prioridad: number) 
     if (turnos.length !== fechasString.length) {
       throw new BadRequestException('Algunos de los turnos del bloque no se encontraron en la base de datos');
     }
+
+    for (const turno of turnos) {
+      this.validarTurnoNoPasado(turno);
+    }
+
     const turnoIds = turnos.map(t => t.id);
 
     const hayAlgunoLleno = turnos.some(t => t.cantidad_inscriptos >= t.capacidad);
@@ -358,6 +365,46 @@ async inscribirPaciente(turnoId: number, pacienteId: number, prioridad: number) 
     return this.inscribirPaciente(turnoId, paciente.id, prioridad);
   }
 
+
+  private validarTurnoNoPasado(turno: { fecha: Date; hora_inicio: Date }) {
+    const turnoFechaHora = new Date(Date.UTC(
+      turno.fecha.getUTCFullYear(),
+      turno.fecha.getUTCMonth(),
+      turno.fecha.getUTCDate(),
+      turno.hora_inicio.getUTCHours(),
+      turno.hora_inicio.getUTCMinutes(),
+      0,
+      0,
+    ));
+
+    const partsNow = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(new Date());
+    const mapNow = new Map(partsNow.map((p) => [p.type, p.value]));
+    const ahoraBA = new Date(Date.UTC(
+      Number(mapNow.get('year')),
+      Number(mapNow.get('month')) - 1,
+      Number(mapNow.get('day')),
+      Number(mapNow.get('hour')),
+      Number(mapNow.get('minute')),
+      0,
+      0,
+    ));
+    const siguienteHoraValida = new Date(Date.UTC(
+      ahoraBA.getUTCFullYear(),
+      ahoraBA.getUTCMonth(),
+      ahoraBA.getUTCDate(),
+      ahoraBA.getUTCHours() + 1,
+      0,
+      0,
+      0,
+    ));
+
+    if (turnoFechaHora.getTime() < siguienteHoraValida.getTime()) {
+      throw new BadRequestException('No es posible realizar una solicitud en un turno expirado o en transcurso');
+    }
+  }
 
   private parseFechaYYYYMMDD(fecha: string): Date {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fecha);

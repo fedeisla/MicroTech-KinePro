@@ -55,10 +55,7 @@ export default function PanelHorarios({
   };
 
   const onListaEsperaClick = () => {
-    const quiereAnotarse = window.confirm('¿Querés agregarte a la lista de espera para este horario y actividad?');
-    if (quiereAnotarse) {
-      handleAnotarEnEspera();
-    }
+    handleAnotarEnEspera();
   };
 
   // 2. Restauramos la lógica de rellenar el día si no hay turnos cargados

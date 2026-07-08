@@ -33,8 +33,6 @@ export default function TabEspera({ turnoId, onActualizarTurno }: TabEsperaProps
 }
 
   const handleEliminarDeEspera = async (idEspera: number) => {
-    if (!confirm('¿Estás seguro de eliminar a este paciente de la lista de espera?')) return
-
     setCargandoId(idEspera)
     try {
       await listaEsperaService.cancelar(idEspera)
@@ -97,10 +95,11 @@ export default function TabEspera({ turnoId, onActualizarTurno }: TabEsperaProps
           <button 
             onClick={() => handleEliminarDeEspera(item.id)}
             disabled={cargandoId === item.id}
-            className="text-neutral-gray hover:bg-red-50 hover:text-red-600 p-2 rounded-lg transition-colors border border-transparent disabled:opacity-50"
-            title="Eliminar de la lista"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50"
+            title="Dar de baja de la lista"
           >
             {cargandoId === item.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserMinus className="w-4 h-4" />}
+            <span>Baja</span>
           </button>
         </div>
       ))}

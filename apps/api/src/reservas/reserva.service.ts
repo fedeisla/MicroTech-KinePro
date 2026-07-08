@@ -249,6 +249,38 @@ export class ReservaService {
     return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
   }
 
+  private validarTurnoNoPasado(turno: { fecha: Date; hora_inicio: Date }) {
+    const turnoFechaHora = this.buildTurnoDateTimeUTC(turno.fecha, turno.hora_inicio);
+
+    const partsNow = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(new Date());
+    const mapNow = new Map(partsNow.map((p) => [p.type, p.value]));
+    const ahoraBA = new Date(Date.UTC(
+      Number(mapNow.get('year')),
+      Number(mapNow.get('month')) - 1,
+      Number(mapNow.get('day')),
+      Number(mapNow.get('hour')),
+      Number(mapNow.get('minute')),
+      0,
+      0,
+    ));
+    const siguienteHoraValida = new Date(Date.UTC(
+      ahoraBA.getUTCFullYear(),
+      ahoraBA.getUTCMonth(),
+      ahoraBA.getUTCDate(),
+      ahoraBA.getUTCHours() + 1,
+      0,
+      0,
+      0,
+    ));
+
+    if (turnoFechaHora.getTime() < siguienteHoraValida.getTime()) {
+      throw new BadRequestException('No es posible realizar una reserva en un turno expirado o en transcurso');
+    }
+  }
+
   private mismaFechaYHoraTurno(
     fechaA: Date,
     horaA: Date,
@@ -305,27 +337,7 @@ export class ReservaService {
     }
 
     // CORRECCIÓN 2: no se puede reservar un turno que ya comenzó o ya pasó
-    const turnoFechaHora = this.buildTurnoDateTimeUTC(turno.fecha, turno.hora_inicio);
-
-    // Comparar usando la hora actual en Buenos Aires para evitar errores por TZ del servidor
-    const partsNow = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'America/Argentina/Buenos_Aires',
-      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
-    }).formatToParts(new Date());
-    const mapNow = new Map(partsNow.map((p) => [p.type, p.value]));
-    const ahoraBA = new Date(Date.UTC(
-      Number(mapNow.get('year')),
-      Number(mapNow.get('month')) - 1,
-      Number(mapNow.get('day')),
-      Number(mapNow.get('hour')),
-      Number(mapNow.get('minute')),
-      0,
-      0,
-    ));
-
-    if (turnoFechaHora.getTime() <= ahoraBA.getTime()) {
-      throw new BadRequestException('No se puede reservar un turno en el pasado o que ya comenzó');
-    }
+    this.validarTurnoNoPasado(turno);
 
     // 2. Validamos la actividad
     const actividad = await this.prisma.tipoActividad.findUnique({
@@ -923,6 +935,10 @@ export class ReservaService {
       throw new BadRequestException('No se encuentra disponibilidad de días para la fecha seleccionada');
     }
 
+    for (const turno of turnos) {
+      this.validarTurnoNoPasado(turno);
+    }
+
     // Extraemos los IDs de los turnos que encontramos para usarlos en tu lógica
     const turnosIds = turnos.map(t => t.id);
 
@@ -1072,6 +1088,8 @@ export class ReservaService {
     if (!turno) {
       throw new BadRequestException('El turno especificado no existe');
     }
+
+    this.validarTurnoNoPasado(turno);
 
     const conflicto = await this.prisma.reserva.findFirst({
       where: {

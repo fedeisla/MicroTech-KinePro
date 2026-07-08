@@ -87,7 +87,7 @@ export default function ReservaTurnos() {
       await listaEsperaService.cancelar(id);
       // Actualizamos el array filtrando la cancelada
       setSolicitudesEspera(prev => prev.filter(s => s.id !== id));
-      toast.info('Solicitud de espera cancelada');
+      toast.info('La solicitud en la lista de espera del turno fue cancelada');
       if (solicitudesEspera.length <= 1) {
         setModalListasAbierto(false);
       }
@@ -750,7 +750,7 @@ useEffect(() => {
       {modalListasAbierto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fade-in">
           <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-xl">
-            <h3 className="font-bold text-lg mb-4 text-slate-800">Mis Listas de Espera Activas</h3>
+            <h3 className="font-bold text-lg mb-4 text-slate-800">Mis listas de espera activas</h3>
             <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
               {solicitudesEspera.map((s) => (
                 <div key={s.id} className="p-3 border border-slate-200 rounded-lg bg-slate-50 flex justify-between items-center shadow-sm">
