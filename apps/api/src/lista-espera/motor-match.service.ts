@@ -22,7 +22,7 @@ export class MotorMatchService {
 
     const config = await this.prisma.configuracionSistema.findUnique({ where: { id: 1 } });
     if (!config) {
-      this.logger.warn(`🛑 ERROR: No existe ConfiguracionSistema.`);
+      this.logger.warn(`ERROR: No existe ConfiguracionSistema.`);
       return;
     }
 
@@ -86,8 +86,8 @@ export class MotorMatchService {
         data: { estado: EstadoListaEspera.NOTIFICADO, fecha_notificacion: new Date() }
       });
 
-      // Resetear contador si asignamos un "turno por demanda" (según tu lógica de respiración)
-      // O incrementar según política. Aquí reseteamos a 0 si es prioridad 2 (Demanda)
+      // Resetear contador si asignamos un "turno por demanda" 
+      // O incrementar según política. reseteamos a 0 si es prioridad 2 (Demanda)
       const nuevoContador = candidato.prioridad === 2 ? 0 : config.contadorRespiracion;
       await tx.configuracionSistema.update({
         where: { id: 1 },
@@ -153,7 +153,7 @@ export class MotorMatchService {
             pacienteId: expirado.paciente_id,
             titulo,
             descripcion,
-            tipo: TipoNotificacion.CANCELACION_TURNO, // Usá acá el tipo de Enum que corresponda en tu sistema
+            tipo: TipoNotificacion.CANCELACION_TURNO, 
             canal: 'EMAIL',
             enviarEmail: true,
             email: "Federicoisla1@gmail.com",

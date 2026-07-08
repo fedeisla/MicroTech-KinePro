@@ -150,6 +150,6 @@ export const BannerEspera = ({
     );
   }
 
-  // CASO 3: Si el estado es CANCELADO, ASIGNADO, EXPIRADO, etc.
+  // CASO 3: Si el estado es CANCELADO, ASIGNADO, EXPIRADO.
   return null;
 };
