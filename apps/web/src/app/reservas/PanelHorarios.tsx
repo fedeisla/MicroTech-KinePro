@@ -185,7 +185,7 @@ export default function PanelHorarios({
             className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-yellow-500 text-white hover:bg-yellow-600 cursor-pointer active:scale-[0.98] shadow-sm transition-all flex items-center justify-center gap-2 animate-in fade-in"
           >
             <AlertCircle className="w-4 h-4" />
-            <span>Agregar a Lista de Espera</span>
+            <span>Agregar a la lista de espera</span>
           </button>
         ) : (
           <button

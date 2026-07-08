@@ -380,7 +380,7 @@ function DetalleInscriptos({
             onClick={() => setTabActiva('ESPERA')} 
             className={`text-sm font-semibold transition-colors ${tabActiva === 'ESPERA' ? 'text-kineblue border-b-2 border-kineblue pb-1' : 'text-neutral-gray hover:text-slate-700'}`}
           >
-            Lista de Espera
+            Lista de espera
           </button>
         )}
       </div>

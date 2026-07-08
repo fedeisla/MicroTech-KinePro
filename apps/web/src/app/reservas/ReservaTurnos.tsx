@@ -24,6 +24,41 @@ import {
 } from '@/services/pagosService';
 import { listaEsperaService } from '@/services/listaEsperaService';
 
+const ordenarSolicitudesPorFechaHora = (a: any, b: any) => {
+  const esNotificadoA = a.estado === 'NOTIFICADO';
+  const esNotificadoB = b.estado === 'NOTIFICADO';
+
+  if (esNotificadoA !== esNotificadoB) {
+    return esNotificadoA ? -1 : 1;
+  }
+
+  const obtenerFechaHora = (item: any) => {
+    const fecha = item?.turno?.fecha;
+    const hora = item?.turno?.hora_inicio;
+
+    if (!fecha) return Number.MAX_SAFE_INTEGER;
+
+    const fechaBase = typeof fecha === 'string' ? fecha.split('T')[0] : '';
+    const horaBase = typeof hora === 'string'
+      ? (hora.includes('T') ? hora.split('T')[1].substring(0, 8) : hora.substring(0, 8))
+      : '00:00:00';
+
+    if (!fechaBase) return Number.MAX_SAFE_INTEGER;
+
+    const fechaHora = new Date(`${fechaBase}T${horaBase}`);
+    return Number.isNaN(fechaHora.getTime()) ? Number.MAX_SAFE_INTEGER : fechaHora.getTime();
+  };
+
+  const fechaHoraA = obtenerFechaHora(a);
+  const fechaHoraB = obtenerFechaHora(b);
+
+  if (fechaHoraA !== fechaHoraB) {
+    return fechaHoraA - fechaHoraB;
+  }
+
+  return new Date(a.fecha_anotacion || 0).getTime() - new Date(b.fecha_anotacion || 0).getTime();
+};
+
 export default function ReservaTurnos() {
   
   const [modalidad, setModalidad] = useState<'UNICO' | 'MENSUAL'>('UNICO');
@@ -312,28 +347,21 @@ useEffect(() => {
   }, [diaPrincipal, mesActual, anioActual]);
 
  
-  useEffect(() => {
-    const cargarEstadosEspera = async () => {
-      try {
-        const estados = await listaEsperaService.obtenerMisEstados();
-        if (estados && estados.length > 0) {
-          estados.sort((a: any, b: any) => {
-            if (a.estado === 'NOTIFICADO' && b.estado !== 'NOTIFICADO') return -1;
-            if (b.estado === 'NOTIFICADO' && a.estado !== 'NOTIFICADO') return 1;
-            if (a.personasAdelante !== b.personasAdelante) {
-              return a.personasAdelante - b.personasAdelante;
-            }
-            return new Date(a.fecha_anotacion).getTime() - new Date(b.fecha_anotacion).getTime();
-          });
-          setSolicitudesEspera(estados);
-        } else {
-          setSolicitudesEspera([]);
-        }
-      } catch (e) {
+  const cargarEstadosEspera = async () => {
+    try {
+      const estados = await listaEsperaService.obtenerMisEstados();
+      if (estados && estados.length > 0) {
+        const estadosOrdenados = [...estados].sort(ordenarSolicitudesPorFechaHora);
+        setSolicitudesEspera(estadosOrdenados);
+      } else {
         setSolicitudesEspera([]);
       }
-    };
-  
+    } catch (e) {
+      setSolicitudesEspera([]);
+    }
+  };
+
+  useEffect(() => {
     cargarEstadosEspera();
 
     const intervaloEspera = setInterval(() => {
@@ -612,6 +640,7 @@ useEffect(() => {
           turnoId: actividadSeleccionada!.id,
           prioridad: 2
         });
+        await cargarEstadosEspera();
         toast.success('¡Te anotaste correctamente!');
       } catch (error: any) {
         toast.error(error.message || 'Error al procesar la solicitud');
@@ -752,7 +781,7 @@ useEffect(() => {
           <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-xl">
             <h3 className="font-bold text-lg mb-4 text-slate-800">Mis listas de espera activas</h3>
             <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
-              {solicitudesEspera.map((s) => (
+              {[...solicitudesEspera].sort(ordenarSolicitudesPorFechaHora).map((s) => (
                 <div key={s.id} className="p-3 border border-slate-200 rounded-lg bg-slate-50 flex justify-between items-center shadow-sm">
                   <div>
                     <p className="text-sm font-bold text-slate-700">{s.turno?.tipoActividad?.nombre || 'Turno'}</p>
@@ -767,11 +796,28 @@ useEffect(() => {
                     <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase ${s.estado === 'NOTIFICADO' ? 'bg-teal-100 text-teal-800' : 'bg-blue-100 text-blue-800'}`}>
                       {s.estado}
                     </span>
-                    {s.estado === 'PENDIENTE' && (
+                    {s.estado === 'NOTIFICADO' ? (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleResponderNotificacion(false, s.id)}
+                          disabled={cargandoCancelacion}
+                          className="text-[11px] text-slate-600 hover:text-slate-800 font-semibold underline disabled:opacity-50 transition-colors"
+                        >
+                          Rechazar
+                        </button>
+                        <button
+                          onClick={() => handleResponderNotificacion(true, s.id)}
+                          disabled={cargandoCancelacion}
+                          className="text-[11px] text-teal-700 hover:text-teal-800 font-semibold underline disabled:opacity-50 transition-colors"
+                        >
+                          Aceptar
+                        </button>
+                      </div>
+                    ) : (
                       <button 
                         onClick={() => handleCancelarEspera(s.id)}
                         disabled={cargandoCancelacion}
-                        className="text-[11px] text-red-500 hover:text-red-700 font-semibold underline disabled:opacity-50 transition-colors"
+                        className="text-[11px] text-slate-600 hover:text-slate-800 font-semibold underline disabled:opacity-50 transition-colors"
                       >
                         Cancelar
                       </button>

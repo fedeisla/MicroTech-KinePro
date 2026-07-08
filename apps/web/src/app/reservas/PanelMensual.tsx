@@ -76,7 +76,7 @@ export default function PanelMensual({
       toast.success(`Solicitud agregada a la lista de espera (Prioridad ${prioridad})`);
       setFaltaDisponibilidad(false);
     } catch (err: any) {
-      toast.error('Error al agregar a lista de espera', { description: err.message });
+      toast.error('Error al agregar a la lista de espera', { description: err.message });
     }
   };
 
@@ -275,9 +275,9 @@ export default function PanelMensual({
                 >
                   {cargando ? 'Procesando...' : (
                     estaLleno ? (
-                        <><AlertCircle className="w-4 h-4" /> Agregar a Lista de Espera</>
+                        <><AlertCircle className="w-4 h-4" /> Agregar a la lista de espera</>
                     ) : (
-                        <><CheckCircle2 className="w-4 h-4" /> Confirmar Reserva</>
+                        <><CheckCircle2 className="w-4 h-4" /> Confirmar reserva</>
                     )
                   )}
                 </button>

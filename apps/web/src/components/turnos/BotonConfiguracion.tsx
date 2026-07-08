@@ -97,7 +97,7 @@ export default function BotonConfiguracion() {
                   
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1">
-                      Sobrecupo para Lista de Espera (%)
+                      Sobrecupo para lista de espera (%)
                     </label>
                     <p className="text-xs text-slate-500 mb-2 leading-relaxed">
                       Límite de pacientes que pueden anotarse una vez que el turno está lleno.

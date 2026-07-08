@@ -85,7 +85,7 @@ export default function TabEspera({ turnoId, onActualizarTurno }: TabEsperaProps
                 {/* Badge de estado Notificando */}
                 {item.estado === 'NOTIFICADO' && (
                   <span className="flex items-center gap-1 text-teal-accent bg-teal-accent/10 px-2 py-0.5 rounded-full border border-teal-accent/20">
-                    <Clock className="w-3 h-3" /> Notificando...
+                    <Clock className="w-3 h-3" /> Notificado
                   </span>
                 )}
               </div>

@@ -130,7 +130,7 @@ async inscribirPaciente(turnoId: number, pacienteId: number, prioridad: number) 
   });
 
   if (ocupacionActual >= limiteLista) {
-    throw new BadRequestException('La capacidad máxima de la lista está completa.');
+    throw new BadRequestException('La lista de espera se encuentra completa.');
   }
 
   // Inscripción

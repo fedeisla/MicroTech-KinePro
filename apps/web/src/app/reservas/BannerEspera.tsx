@@ -75,7 +75,7 @@ export const BannerEspera = ({
         
         {/* BOTONES ALINEADOS A LA DERECHA */}
         <div className="flex gap-2 shrink-0 w-full sm:w-auto">
-          {totalActivas && totalActivas > 1 && (
+          {totalActivas && totalActivas > 0 && (
             <button 
               onClick={onVerTodas}
               className="flex-1 sm:flex-none flex justify-center items-center text-sm bg-teal-100 text-teal-700 font-medium px-3 py-2 rounded-lg hover:bg-teal-200 transition-colors"
@@ -130,7 +130,7 @@ export const BannerEspera = ({
         
         {/* BOTONES ALINEADOS A LA DERECHA */}
         <div className="flex gap-2 shrink-0 w-full sm:w-auto">
-          {totalActivas && totalActivas > 1 && (
+          {totalActivas && totalActivas > 0 && (
             <button 
               onClick={onVerTodas}
               className="w-full sm:w-auto flex justify-center text-sm bg-blue-100 text-blue-700 font-medium px-4 py-2 rounded-lg hover:bg-blue-200 transition-colors shrink-0"

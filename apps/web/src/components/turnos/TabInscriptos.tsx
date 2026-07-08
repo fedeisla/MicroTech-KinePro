@@ -127,7 +127,7 @@ export default function TabInscriptos({ detalle, fecha, esAdmin, estaLleno = fal
       if (onReservaCreada) await onReservaCreada()
     } catch (err: any) {
       toast.error('No se pudo agregar al paciente', { 
-        description: err.message || 'La capacidad máxima de la lista está completa.' 
+        description: err.message || 'La lista de espera se encuentra completa.' 
       })
     } finally {
       setLoading(false)
@@ -349,13 +349,13 @@ export default function TabInscriptos({ detalle, fecha, esAdmin, estaLleno = fal
               
               {mostrarBotonEsperaFijo && !estaLleno && (
                 <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-md text-xs mb-3 font-medium">
-                  Al menos un turno en este período está lleno. Podés anotar al paciente en la <strong>Lista de Espera</strong>.
+                  Al menos un turno en este período está lleno. Podés anotar al paciente en la <strong>lista de espera</strong>.
                 </div>
               )}
 
               <div className="flex gap-2">
                 <button disabled={loading} onClick={handleAgregarAListaEspera} className="w-full px-3 py-2 rounded-md bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 transition-colors disabled:opacity-50">
-                  {loading ? 'Ingresando...' : 'Agregar a Lista de Espera'}
+                  {loading ? 'Ingresando...' : 'Agregar a la lista de espera'}
                 </button>
               </div>
             </div>
