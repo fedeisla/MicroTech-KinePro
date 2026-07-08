@@ -53,7 +53,7 @@ export default function BotonConfiguracion() {
         porcentajeListaEspera: config.porcentajeListaEspera,
         horasExpiracionEspera: config.horasExpiracionEspera,
       });
-      toast.success('Configuración guardada correctamente');
+      toast.success('Configuración actualizada correctamente');
       setAbierto(false);
     } catch (error) {
       toast.error('Hubo un problema al guardar los cambios');
@@ -69,7 +69,7 @@ export default function BotonConfiguracion() {
         className="flex items-center justify-center gap-2 px-3 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 shadow-sm transition-colors text-sm font-medium h-[40px]"
       >
         <Settings className="w-[18px] h-[18px] text-slate-600" />
-        <span className="hidden sm:inline">Ajustes</span>
+        <span className="hidden sm:inline">Configuración de listas de espera</span>
       </button>
 
       {abierto && (
@@ -77,7 +77,7 @@ export default function BotonConfiguracion() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
             
             <div className="flex justify-between items-center p-5 border-b border-slate-100 bg-slate-50">
-              <h3 className="font-bold text-lg text-slate-800">Parámetros de Turnos</h3>
+              <h3 className="font-bold text-lg text-slate-800">Configuración de listas de espera</h3>
               <button 
                 onClick={() => setAbierto(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
@@ -97,7 +97,7 @@ export default function BotonConfiguracion() {
                   
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1">
-                      Sobrecupo para lista de espera (%)
+                      Sobrecupo para cada lista de espera (%)
                     </label>
                     <p className="text-xs text-slate-500 mb-2 leading-relaxed">
                       Límite de pacientes que pueden anotarse una vez que el turno está lleno.
@@ -119,7 +119,7 @@ export default function BotonConfiguracion() {
 
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1">
-                      Vencimiento de la Notificación (Horas)
+                      Vencimiento de la notificación (horas)
                     </label>
                     <p className="text-xs text-slate-500 mb-2 leading-relaxed">
                       Tiempo máximo que se le da al paciente para confirmar el lugar liberado.
@@ -135,7 +135,7 @@ export default function BotonConfiguracion() {
                         className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white transition-all text-slate-700 font-medium"
                         required
                       />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">Hs</span>
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">hs</span>
                     </div>
                   </div>
 

@@ -148,7 +148,7 @@ export default function NotificacionesDropdown() {
               {notificaciones.length === 0 ? (
                 <div className="p-8 text-center text-sm text-slate-400 flex flex-col items-center justify-center gap-2">
                   <Bell className="w-8 h-8 text-slate-300 stroke-[1.5]" />
-                  <span>No tenés notificaciones pendientes</span>
+                  <span>No posees notificaciones</span>
                 </div>
               ) : (
                 notificaciones.map((notif) => {

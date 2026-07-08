@@ -54,7 +54,7 @@ export default function TabEspera({ turnoId, onActualizarTurno }: TabEsperaProps
   }
 
   if (listaEspera.length === 0) {
-    return <p className="text-gray-500 text-sm italic py-2">No hay nadie en espera para este turno.</p>
+    return <p className="text-gray-500 text-sm italic py-2">No hay pacientes en espera para este turno.</p>
   }
 
 
@@ -79,7 +79,7 @@ export default function TabEspera({ turnoId, onActualizarTurno }: TabEsperaProps
                     ? 'bg-kineblue-light/40 text-kineblue-deep' 
                     : 'bg-progreen-light/40 text-progreen-deep'
                 }`}>
-                  {item.prioridad === 1 ? 'Turno Fijo' : 'Por Demanda'}
+                  {item.prioridad === 1 ? 'Turno fijo' : 'Turno único'}
                 </span>
                 
                 {/* Badge de estado Notificando */}

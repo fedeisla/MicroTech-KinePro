@@ -95,7 +95,7 @@ export default function AcercaDe() {
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-center gap-2 mb-2">
                 <Clock className="h-5 w-5 text-teal-600" />
-                <p className="font-semibold text-slate-800">Turnos por demanda</p>
+                <p className="font-semibold text-slate-800">Turnos únicos</p>
               </div>
               <p className="text-sm text-slate-600">Para consultas puntuales o cuando lo necesites.</p>
             </div>
