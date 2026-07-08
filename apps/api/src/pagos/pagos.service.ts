@@ -16,8 +16,6 @@ export class PagosService {
     private configService: ConfigService,
     private notificacionesService: NotificacionesService,
     private configuracionService: ConfiguracionService,
-    private notificacionesService: NotificacionesService,
-    private configuracionService: ConfiguracionService,
   ) {
     const accessToken = this.configService.get<string>('MERCADOPAGO_ACCESS_TOKEN')
     if (!accessToken) {
@@ -168,7 +166,6 @@ export class PagosService {
         })
       })
       await this.crearNotificacionReservaConfirmada(reservaId)
-      await this.crearNotificacionReservaConfirmada(reservaId)
       return { status: 'ok', message: 'Pago confirmado' }
     }
 
@@ -261,7 +258,6 @@ export class PagosService {
           data: { estado: 'CONFIRMADA' },
         })
       })
-      await this.crearNotificacionReservaConfirmada(reservaId)
       await this.crearNotificacionReservaConfirmada(reservaId)
       return { status: 'ok', message: 'Pago confirmado' }
     }
@@ -420,53 +416,6 @@ export class PagosService {
     })
   }
 
-  private async crearNotificacionReservaConfirmada(reservaId: number) {
-    const reserva = await this.prisma.reserva.findUnique({
-      where: { id: reservaId },
-      include: {
-        turno: { include: { tipoActividad: true } },
-        paciente: { include: { usuario: true } },
-      },
-    })
-    if (!reserva || !reserva.paciente?.usuario) return
-
-    const turno = reserva.turno
-    const fechaTurno = new Date(Date.UTC(
-      turno.fecha.getUTCFullYear(),
-      turno.fecha.getUTCMonth(),
-      turno.fecha.getUTCDate(),
-      turno.hora_inicio.getUTCHours(),
-      turno.hora_inicio.getUTCMinutes(),
-    ))
-    const fechaStr = fechaTurno.toLocaleDateString('es-AR')
-    const horaStr = turno.hora_inicio.getUTCHours().toString().padStart(2, '0') + ':' + turno.hora_inicio.getUTCMinutes().toString().padStart(2, '0')
-
-    await this.notificacionesService.crearNotificacion({
-      pacienteId: reserva.paciente_id,
-      reservaId: reserva.id,
-      titulo: 'Turno confirmado',
-      descripcion: `Su turno para la actividad ${turno.tipoActividad.nombre} ha sido confirmado para el día ${fechaStr} a las ${horaStr}hs.`,
-      tipo: 'INFORMATIVA',
-      canal: 'EMAIL',
-      enviarEmail: true,
-      email: reserva.paciente.usuario.email,
-    })
-
-    const fechaEnvioRecordatorio = new Date(fechaTurno.getTime() - 24 * 60 * 60 * 1000)
-    const enviarRecordatorioAhora = fechaEnvioRecordatorio.getTime() <= Date.now()
-    await this.notificacionesService.crearNotificacion({
-      pacienteId: reserva.paciente_id,
-      reservaId: reserva.id,
-      titulo: 'Recordatorio de turno',
-      descripcion: `Recordatorio de turno confirmado para la actividad ${turno.tipoActividad.nombre} el día ${fechaStr} a las ${horaStr}hs.`,
-      tipo: 'RECORDATORIO',
-      canal: 'EMAIL',
-      fechaEnvio: enviarRecordatorioAhora ? new Date() : fechaEnvioRecordatorio,
-      enviarEmail: enviarRecordatorioAhora,
-      email: reserva.paciente.usuario.email,
-    })
-  }
-
   // ============================================================
   // Crear preference de MercadoPago para N reservas (turnos fijos)
   // ============================================================
@@ -515,10 +464,7 @@ export class PagosService {
     })
     const totalReprog = reservasConReprog.reduce((acc, c) => acc + c.cant_reprogramaciones, 0)
     const { porcentaje: porcentajeConfigurado } = await this.configuracionService.obtenerDescuento()
-    const { porcentaje: porcentajeConfigurado } = await this.configuracionService.obtenerDescuento()
     const aplicaDescuento = ausencias < 2 && totalReprog < 2
-    const factorDescuento = aplicaDescuento ? (100 - porcentajeConfigurado) / 100 : 1
-    const precioPorReserva = precioBase * factorDescuento
     const factorDescuento = aplicaDescuento ? (100 - porcentajeConfigurado) / 100 : 1
     const precioPorReserva = precioBase * factorDescuento
 
@@ -636,11 +582,9 @@ export class PagosService {
         })
         if (reservaSample && precioReserva < Number(reservaSample.turno.tipoActividad.precio)) {
           const { porcentaje: porcentajeConfigurado } = await this.configuracionService.obtenerDescuento()
-          const { porcentaje: porcentajeConfigurado } = await this.configuracionService.obtenerDescuento()
           await tx.descuento.create({
             data: {
               paciente_id: pacienteId,
-              porcentaje: porcentajeConfigurado,
               porcentaje: porcentajeConfigurado,
               motivo: 'Reserva de turnos fijos sin ausencias ni reprogramaciones',
               mes_aplicable: mesAplicable,
@@ -649,11 +593,6 @@ export class PagosService {
           })
         }
       })
-      for (const p of pagosGrupo) {
-        if (p.reserva.estado !== 'CONFIRMADA') {
-          await this.crearNotificacionReservaConfirmada(p.reserva_id)
-        }
-      }
       for (const p of pagosGrupo) {
         if (p.reserva.estado !== 'CONFIRMADA') {
           await this.crearNotificacionReservaConfirmada(p.reserva_id)

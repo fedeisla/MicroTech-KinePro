@@ -6,7 +6,6 @@ import { NotificacionesService } from '@/notificaciones/notificaciones.service';
 import { MailService } from '@/mail/mail.service';
 import { EstadoReserva, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { ConfiguracionService } from '@/configuracion/configuracion.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ConfiguracionService } from '@/configuracion/configuracion.service';
 
@@ -146,110 +145,6 @@ export class ReservaService {
       enviarEmail: true,
       email,
       html,
-    });
-  }
-
-  private async crearNotificacionReservaCancelada(
-    pacienteId: number,
-    reservaId: number,
-    turno: { fecha: Date; hora_inicio: Date },
-    actividadNombre: string,
-    email?: string,
-  ) {
-    if (!email) return;
-
-    const fechaTurno = new Date(Date.UTC(
-      turno.fecha.getUTCFullYear(),
-      turno.fecha.getUTCMonth(),
-      turno.fecha.getUTCDate(),
-      turno.hora_inicio.getUTCHours(),
-      turno.hora_inicio.getUTCMinutes(),
-    ));
-    const fechaStr = fechaTurno.toLocaleDateString('es-AR');
-    const horaStr = turno.hora_inicio.getUTCHours().toString().padStart(2, '0') + ':' + turno.hora_inicio.getUTCMinutes().toString().padStart(2, '0');
-
-    await this.notificacionesService.crearNotificacion({
-      pacienteId,
-      reservaId,
-      titulo: 'Turno cancelado',
-      descripcion: `Su turno para la actividad ${actividadNombre} el día ${fechaStr} a las ${horaStr}hs fue cancelado.`,
-      tipo: 'CANCELACION_TURNO',
-      canal: 'EMAIL',
-      enviarEmail: true,
-      email,
-    });
-  }
-
-  private async crearNotificacionReservaReprogramada(
-    pacienteId: number,
-    reservaId: number,
-    turnoAnterior: { fecha: Date; hora_inicio: Date },
-    turnoNuevo: { fecha: Date; hora_inicio: Date },
-    actividadNombre: string,
-    email?: string,
-  ) {
-    if (!email) return;
-
-    const fechaVieja = new Date(Date.UTC(
-      turnoAnterior.fecha.getUTCFullYear(),
-      turnoAnterior.fecha.getUTCMonth(),
-      turnoAnterior.fecha.getUTCDate(),
-      turnoAnterior.hora_inicio.getUTCHours(),
-      turnoAnterior.hora_inicio.getUTCMinutes(),
-    ));
-    const fechaNueva = new Date(Date.UTC(
-      turnoNuevo.fecha.getUTCFullYear(),
-      turnoNuevo.fecha.getUTCMonth(),
-      turnoNuevo.fecha.getUTCDate(),
-      turnoNuevo.hora_inicio.getUTCHours(),
-      turnoNuevo.hora_inicio.getUTCMinutes(),
-    ));
-
-    const fechaViejaStr = fechaVieja.toLocaleDateString('es-AR');
-    const horaViejaStr = turnoAnterior.hora_inicio.getUTCHours().toString().padStart(2, '0') + ':' + turnoAnterior.hora_inicio.getUTCMinutes().toString().padStart(2, '0');
-    const fechaNuevaStr = fechaNueva.toLocaleDateString('es-AR');
-    const horaNuevaStr = turnoNuevo.hora_inicio.getUTCHours().toString().padStart(2, '0') + ':' + turnoNuevo.hora_inicio.getUTCMinutes().toString().padStart(2, '0');
-
-    await this.notificacionesService.crearNotificacion({
-      pacienteId,
-      reservaId,
-      titulo: 'Turno reprogramado',
-      descripcion: `Su turno para la actividad ${actividadNombre} el día ${fechaViejaStr} a las ${horaViejaStr}hs fue reprogramado para el día ${fechaNuevaStr} a las ${horaNuevaStr}hs.`,
-      tipo: 'INFORMATIVA',
-      canal: 'EMAIL',
-      enviarEmail: true,
-      email,
-    });
-  }
-
-  private async crearNotificacionReservaCreada(
-    pacienteId: number,
-    reservaId: number,
-    turno: { fecha: Date; hora_inicio: Date },
-    actividadNombre: string,
-    email?: string,
-  ) {
-    if (!email) return;
-
-    const fechaTurno = new Date(Date.UTC(
-      turno.fecha.getUTCFullYear(),
-      turno.fecha.getUTCMonth(),
-      turno.fecha.getUTCDate(),
-      turno.hora_inicio.getUTCHours(),
-      turno.hora_inicio.getUTCMinutes(),
-    ));
-    const fechaStr = fechaTurno.toLocaleDateString('es-AR');
-    const horaStr = turno.hora_inicio.getUTCHours().toString().padStart(2, '0') + ':' + turno.hora_inicio.getUTCMinutes().toString().padStart(2, '0');
-
-    await this.notificacionesService.crearNotificacion({
-      pacienteId,
-      reservaId,
-      titulo: 'Turno reservado',
-      descripcion: `Su turno para la actividad ${actividadNombre} ha sido reservado para el día ${fechaStr} a las ${horaStr}hs.`,
-      tipo: 'INFORMATIVA',
-      canal: 'EMAIL',
-      enviarEmail: true,
-      email,
     });
   }
 
@@ -475,14 +370,6 @@ export class ReservaService {
 
         // Acá iría la lógica del pago...
       });
-
-      const paciente = await this.prisma.paciente.findUnique({
-        where: { id: pacienteId },
-        include: { usuario: true },
-      });
-
-      // No emitir notificación aquí porque la reserva está en PENDIENTE
-      // La notificación se envía cuando se confirma el pago
 
       const paciente = await this.prisma.paciente.findUnique({
         where: { id: pacienteId },
@@ -933,13 +820,6 @@ export class ReservaService {
           reserva.turno.tipoActividad.nombre,
           reserva.paciente.usuario.email,
         );
-        await this.crearNotificacionReservaCancelada(
-          reserva.paciente.id,
-          reserva.id,
-          reserva.turno,
-          reserva.turno.tipoActividad.nombre,
-          reserva.paciente.usuario.email,
-        );
       }
     } catch (err) {
       this.logger.error('Error creando notificacion de cancelacion: ' + String(err));
@@ -1123,28 +1003,6 @@ export class ReservaService {
         // Intencionalmente no enviamos notificación aquí.
       }
 
-      const paciente = await this.prisma.paciente.findUnique({
-        where: { id: pacienteId },
-        include: { usuario: true },
-      });
-
-      // Emitir notificaciones solo si la reserva fue creada en CONFIRMADA (presencial)
-      if (estadoInicial === EstadoReserva.CONFIRMADA && paciente?.usuario) {
-        for (let index = 0; index < reservaIds.length; index += 1) {
-          const reservaId = reservaIds[index];
-          const turnoCreado = turnos[index];
-          if (turnoCreado) {
-            await this.crearNotificacionReservaCreada(
-              pacienteId,
-              reservaId,
-              turnoCreado,
-              turnoBase.tipoActividad_id ? (await this.prisma.tipoActividad.findUnique({ where: { id: turnoBase.tipoActividad_id } }))?.nombre ?? 'actividad' : 'actividad',
-              paciente.usuario.email,
-            );
-          }
-        }
-      }
-
       // Determinar el mensaje específico según el escenario
       let mensajeRespuesta: string;
       
@@ -1257,12 +1115,10 @@ export class ReservaService {
 
     if (!usuario || !usuario.paciente) {
       throw new BadRequestException('El email no corresponde a un paciente registrado');
-      throw new BadRequestException('El email no corresponde a un paciente registrado');
     }
 
     // Para presencial, crear directamente en CONFIRMADA
-    // Para presencial, crear directamente en CONFIRMADA
-    return this.crearReservaFija(usuario.paciente.id, turnoInicialId, fechasString, EstadoReserva.CONFIRMADA, EstadoReserva.CONFIRMADA);
+    return this.crearReservaFija(usuario.paciente.id, turnoInicialId, fechasString, EstadoReserva.CONFIRMADA);
   }
 
   async chequearDescuento(email: string) {
