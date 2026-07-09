@@ -1,4 +1,20 @@
 import { apiFetch } from '@/lib/api'
+import type { FiltroHistorialPagos, PagoHistorial, PacienteFiltrable } from '@/types/pago'
+
+// ===========================================
+// Historial de pagos (OWNER / ADMIN)
+// ===========================================
+export async function obtenerHistorialPagos(filtros?: FiltroHistorialPagos): Promise<PagoHistorial[]> {
+  const params = new URLSearchParams()
+  if (filtros?.paciente_id) params.set('paciente_id', String(filtros.paciente_id))
+  if (filtros?.estado) params.set('estado', filtros.estado)
+  const query = params.toString()
+  return apiFetch<PagoHistorial[]>(`/pagos/historial${query ? `?${query}` : ''}`)
+}
+
+export async function obtenerPacientesParaFiltro(): Promise<PacienteFiltrable[]> {
+  return apiFetch<PacienteFiltrable[]>('/pagos/pacientes')
+}
 
 // ===========================================
 // Pago presencial (efectivo / tarjeta)

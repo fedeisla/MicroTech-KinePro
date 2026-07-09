@@ -1,11 +1,23 @@
-import { Controller, Post, Body, Param, ParseIntPipe } from '@nestjs/common'
+import { Controller, Get, Post, Body, Param, ParseIntPipe, Query } from '@nestjs/common'
 import { PagosService } from './pagos.service'
-import { CrearPagoDto } from './pagos.dto'
+import { CrearPagoDto, ListarHistorialPagosDto } from './pagos.dto'
 import { Roles } from '@/auth/roles.decorator'
 
 @Controller('pagos')
 export class PagosController {
   constructor(private readonly pagosService: PagosService) {}
+
+  @Roles('OWNER', 'ADMIN')
+  @Get('historial')
+  listarHistorial(@Query() query: ListarHistorialPagosDto) {
+    return this.pagosService.listarHistorial(query)
+  }
+
+  @Roles('OWNER', 'ADMIN')
+  @Get('pacientes')
+  listarPacientesConPagos() {
+    return this.pagosService.listarPacientesConPagos()
+  }
 
   @Roles('OWNER', 'ADMIN')
   @Post()

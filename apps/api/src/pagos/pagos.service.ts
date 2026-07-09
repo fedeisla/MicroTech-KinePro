@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config'
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { PrismaService } from '../prisma/prisma.service'
 import { NotificacionesService } from '@/notificaciones/notificaciones.service'
-import { CrearPagoDto } from './pagos.dto'
+import { CrearPagoDto, ListarHistorialPagosDto } from './pagos.dto'
 import { ConfiguracionService } from '@/configuracion/configuracion.service'
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago'
 import { EstadoListaEspera } from '@prisma/client'
@@ -26,6 +26,84 @@ export class PagosService {
     }
     this.mpClient = new MercadoPagoConfig({ accessToken })
     this.frontUrl = this.configService.get<string>('FRONT_URL') ?? 'http://localhost:3000'
+  }
+
+  // ============================================================
+  // Historial de pagos (OWNER / ADMIN)
+  // ============================================================
+  private static readonly LIMITE_HISTORIAL = 20
+
+  private mapearPagoHistorial(pago: {
+    id: number
+    monto: { toString(): string } | number | string
+    fecha_pago: Date | null
+    estado: string
+    reserva: {
+      paciente_id: number
+      paciente: { usuario: { nombre: string; apellido: string; email: string } }
+      turno: {
+        fecha: Date
+        hora_inicio: Date
+        tipoActividad: { nombre: string }
+      }
+    }
+  }) {
+    const { reserva } = pago
+    const { turno } = reserva
+    const { usuario } = reserva.paciente
+
+    const y = turno.fecha.getUTCFullYear()
+    const m = String(turno.fecha.getUTCMonth() + 1).padStart(2, '0')
+    const d = String(turno.fecha.getUTCDate()).padStart(2, '0')
+    const h = String(turno.hora_inicio.getUTCHours()).padStart(2, '0')
+    const min = String(turno.hora_inicio.getUTCMinutes()).padStart(2, '0')
+
+    return {
+      id: pago.id,
+      paciente_id: reserva.paciente_id,
+      paciente: `${usuario.nombre} ${usuario.apellido}`,
+      email: usuario.email,
+      turno: `${turno.tipoActividad.nombre} · ${d}/${m}/${y} · ${h}:${min} hs`,
+      fecha_pago: pago.fecha_pago?.toISOString() ?? null,
+      estado: pago.estado,
+      monto: Number(pago.monto),
+    }
+  }
+
+  async listarHistorial(query: ListarHistorialPagosDto = {}) {
+    const pagos = await this.prisma.pago.findMany({
+      where: {
+        ...(query.paciente_id ? { reserva: { paciente_id: query.paciente_id } } : {}),
+        ...(query.estado ? { estado: query.estado } : {}),
+      },
+      include: {
+        reserva: {
+          include: {
+            paciente: { include: { usuario: true } },
+            turno: { include: { tipoActividad: true } },
+          },
+        },
+      },
+      orderBy: { id: 'desc' },
+      take: PagosService.LIMITE_HISTORIAL,
+    })
+
+    return pagos.map((pago) => this.mapearPagoHistorial(pago))
+  }
+
+  async listarPacientesConPagos() {
+    const pacientes = await this.prisma.paciente.findMany({
+      include: {
+        usuario: { select: { nombre: true, apellido: true, email: true } },
+      },
+      orderBy: [{ usuario: { apellido: 'asc' } }, { usuario: { nombre: 'asc' } }],
+    })
+
+    return pacientes.map((p) => ({
+      id: p.id,
+      nombre: `${p.usuario.nombre} ${p.usuario.apellido}`,
+      email: p.usuario.email,
+    }))
   }
 
   // ============================================================
