@@ -1,10 +1,12 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import { EventEmitter2 } from '@nestjs/event-emitter'
 import { PrismaService } from '../prisma/prisma.service'
 import { NotificacionesService } from '@/notificaciones/notificaciones.service'
 import { CrearPagoDto } from './pagos.dto'
 import { ConfiguracionService } from '@/configuracion/configuracion.service'
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago'
+import { EstadoListaEspera } from '@prisma/client'
 
 @Injectable()
 export class PagosService {
@@ -16,9 +18,7 @@ export class PagosService {
     private configService: ConfigService,
     private notificacionesService: NotificacionesService,
     private configuracionService: ConfiguracionService,
-
- 
-
+    private eventEmitter: EventEmitter2,
   ) {
     const accessToken = this.configService.get<string>('MERCADOPAGO_ACCESS_TOKEN')
     if (!accessToken) {
@@ -207,16 +207,29 @@ export class PagosService {
     if (!reserva) return { message: 'Reserva no encontrada' }
     if (reserva.estado !== 'PENDIENTE') return { message: 'Reserva no está pendiente' }
 
+    const turnoId = reserva.turno_id
+    const pacienteId = reserva.paciente_id
+
     await this.prisma.$transaction(async (tx) => {
       await tx.reserva.update({
         where: { id: reservaId },
         data: { estado: 'CANCELADA' },
       })
       await tx.turno.update({
-        where: { id: reserva.turno_id },
+        where: { id: turnoId },
         data: { cantidad_inscriptos: { decrement: 1 } },
       })
+      await tx.listaEspera.updateMany({
+        where: {
+          turno_id: turnoId,
+          paciente_id: pacienteId,
+          estado: EstadoListaEspera.ASIGNADO,
+        },
+        data: { estado: EstadoListaEspera.EXPIRADO },
+      })
     })
+
+    this.eventEmitter.emit('turno.liberado', { turnoId })
     return { message: 'Reserva cancelada' }
   }
 
@@ -519,6 +532,8 @@ export class PagosService {
       where: { id: { in: reservaIds } },
     })
 
+    const turnoIdsLiberados = new Set<number>()
+
     await this.prisma.$transaction(async (tx) => {
       for (const r of reservas) {
         if (r.estado === 'PENDIENTE') {
@@ -530,9 +545,22 @@ export class PagosService {
             where: { id: r.turno_id },
             data: { cantidad_inscriptos: { decrement: 1 } },
           })
+          await tx.listaEspera.updateMany({
+            where: {
+              turno_id: r.turno_id,
+              paciente_id: r.paciente_id,
+              estado: EstadoListaEspera.ASIGNADO,
+            },
+            data: { estado: EstadoListaEspera.EXPIRADO },
+          })
+          turnoIdsLiberados.add(r.turno_id)
         }
       }
     })
+
+    for (const turnoId of turnoIdsLiberados) {
+      this.eventEmitter.emit('turno.liberado', { turnoId })
+    }
 
     return { message: 'Reservas canceladas' }
   }

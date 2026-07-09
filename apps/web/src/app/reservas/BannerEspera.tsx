@@ -1,3 +1,6 @@
+'use client';
+
+import { useEffect, useState } from 'react';
 import { Users, Loader2, Check, X, Bell, CalendarClock } from 'lucide-react';
 
 export interface BannerEsperaProps {
@@ -9,6 +12,7 @@ export interface BannerEsperaProps {
   totalActivas?: number;
   onVerTodas?: () => void;
   cargando: boolean;
+  fechaExpiracion?: string;
   turnoInfo?: {
     actividad: string;
     fecha: string;
@@ -18,7 +22,7 @@ export interface BannerEsperaProps {
 
 const formatearFecha = (fechaRaw: string) => {
   if (!fechaRaw) return '';
-  const fechaLimpia = fechaRaw.split('T')[0].split(' ')[0]; // Cubre 'T' o espacio
+  const fechaLimpia = fechaRaw.split('T')[0].split(' ')[0];
   const partes = fechaLimpia.split('-');
   if (partes.length === 3) {
     return `${partes[2]}/${partes[1]}/${partes[0]}`;
@@ -28,7 +32,6 @@ const formatearFecha = (fechaRaw: string) => {
 
 const formatearHora = (horaRaw: string) => {
   if (!horaRaw) return '';
-  // Si viene completa con 'T' o espacio
   if (horaRaw.includes('T') || horaRaw.includes(' ')) {
     const separador = horaRaw.includes('T') ? 'T' : ' ';
     const tiempo = horaRaw.split(separador)[1];
@@ -36,6 +39,50 @@ const formatearHora = (horaRaw: string) => {
   }
   return horaRaw.substring(0, 5);
 };
+
+const formatearTiempoRestante = (fechaExpiracion: Date): string => {
+  const ms = fechaExpiracion.getTime() - Date.now();
+
+  if (ms <= 0) {
+    return 'El plazo para aceptar o rechazar venció.';
+  }
+
+  const totalMinutos = Math.floor(ms / (1000 * 60));
+  const horas = Math.floor(totalMinutos / 60);
+  const minutos = totalMinutos % 60;
+
+  if (horas > 0 && minutos > 0) {
+    return `Te quedan ${horas} hs y ${minutos} min para aceptar o rechazar.`;
+  }
+  if (horas > 0) {
+    return `Te quedan ${horas} hs para aceptar o rechazar.`;
+  }
+  if (minutos > 1) {
+    return `Te quedan ${minutos} min para aceptar o rechazar.`;
+  }
+  return 'Te queda menos de 1 minuto para aceptar o rechazar.';
+};
+
+function useTiempoRestante(fechaExpiracion?: string) {
+  const [texto, setTexto] = useState('');
+
+  useEffect(() => {
+    if (!fechaExpiracion) {
+      setTexto('Tenés tiempo limitado para aceptar o rechazar.');
+      return;
+    }
+
+    const actualizar = () => {
+      setTexto(formatearTiempoRestante(new Date(fechaExpiracion)));
+    };
+
+    actualizar();
+    const intervalo = setInterval(actualizar, 30_000);
+    return () => clearInterval(intervalo);
+  }, [fechaExpiracion]);
+
+  return texto;
+}
 
 export const BannerEspera = ({ 
   personasAdelante, 
@@ -46,8 +93,12 @@ export const BannerEspera = ({
   totalActivas,
   onVerTodas,
   cargando,
+  fechaExpiracion,
   turnoInfo 
 }: BannerEsperaProps) => {
+  const tiempoRestante = useTiempoRestante(
+    estado === 'NOTIFICADO' ? fechaExpiracion : undefined,
+  );
   
   // CASO 1: Turno disponible para ser aceptado
   if (estado === 'NOTIFICADO') {
@@ -69,11 +120,10 @@ export const BannerEspera = ({
               </div>
             )}
             
-            <p className="text-sm text-teal-700 mt-1">Tenés 12hs para aceptar o rechazar.</p>
+            <p className="text-sm text-teal-700 mt-1">{tiempoRestante}</p>
           </div>
         </div>
         
-        {/* BOTONES ALINEADOS A LA DERECHA */}
         <div className="flex gap-2 shrink-0 w-full sm:w-auto">
           {totalActivas && totalActivas > 0 && (
             <button 
@@ -128,7 +178,6 @@ export const BannerEspera = ({
           </div>
         </div>
         
-        {/* BOTONES ALINEADOS A LA DERECHA */}
         <div className="flex gap-2 shrink-0 w-full sm:w-auto">
           {totalActivas && totalActivas > 0 && (
             <button 
@@ -150,6 +199,5 @@ export const BannerEspera = ({
     );
   }
 
-  // CASO 3: Si el estado es CANCELADO, ASIGNADO, EXPIRADO.
   return null;
 };

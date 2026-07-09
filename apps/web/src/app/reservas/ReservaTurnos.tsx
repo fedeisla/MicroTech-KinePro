@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { toast } from 'sonner'; 
+import { toast } from 'sonner';
+import { Users } from 'lucide-react';
 import { getDiasDisponiblesDelMes, getHorariosTurnos } from '@/services/turnosService';
 import { Actividad, RangoHorarioBackend } from '@/types/turno';
 import { CrearReservaInput } from '@/types/reserva';
@@ -23,6 +24,8 @@ import {
   cancelarPagoMPFijo,
 } from '@/services/pagosService';
 import { listaEsperaService } from '@/services/listaEsperaService';
+
+const LIMITE_PAGO_MS = 5 * 60 * 1000; // 5 minutos, igual que reserva virtual normal
 
 const ordenarSolicitudesPorFechaHora = (a: any, b: any) => {
   const esNotificadoA = a.estado === 'NOTIFICADO';
@@ -66,6 +69,7 @@ export default function ReservaTurnos() {
 
   // Cambiado: Ahora es un array de solicitudes y agregamos estado para el modal
   const [solicitudesEspera, setSolicitudesEspera] = useState<any[]>([]);
+  const [listasEsperaCargadas, setListasEsperaCargadas] = useState(false);
   const [modalListasAbierto, setModalListasAbierto] = useState(false);
   const [cargandoCancelacion, setCargandoCancelacion] = useState(false);
 
@@ -133,48 +137,37 @@ export default function ReservaTurnos() {
     }
   };
 
-  const handleResponderNotificacion = async (acepta: boolean) => {
-    if (!solicitudPrincipal) return;
+  const handleResponderNotificacion = async (acepta: boolean, idSolicitud?: number) => {
+    const solicitud = idSolicitud
+      ? solicitudesEspera.find((s) => s.id === idSolicitud)
+      : solicitudPrincipal;
+    if (!solicitud) return;
     setCargandoCancelacion(true);
 
     try {
       if (!acepta) {
         await listaEsperaService.responderNotificacion(
-          solicitudPrincipal.id, 
-          false, 
-          solicitudPrincipal.turnoId
+          solicitud.id,
+          false,
+          solicitud.turnoId
         );
-        toast.info('Rechazaste el turno');
-        setSolicitudesEspera(prev => prev.filter(s => s.id !== solicitudPrincipal.id));
+        toast.info('Rechazaste el turno ofrecido');
+        setSolicitudesEspera(prev => prev.filter(s => s.id !== solicitud.id));
         return;
       }
 
-      toast.info('Procesando confirmación...', { duration: 2000 });
+      toast.info('Procesando reserva…', { duration: 2000 });
 
       const resReserva = await listaEsperaService.responderNotificacion(
-        solicitudPrincipal.id, 
-        true, 
-        solicitudPrincipal.turnoId
+        solicitud.id,
+        true,
+        solicitud.turnoId
       );
 
       const esFijo = Array.isArray(resReserva.reservaIds) && resReserva.reservaIds.length > 0;
 
       if (!resReserva || (!resReserva.reservaId && !esFijo)) {
         throw new Error('El servidor no devolvió el ID de la reserva para generar el pago.');
-      }
-      
-      if (resReserva.montoTotal !== undefined) {
-        const formatear = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        let msgPago = `Total a abonar en Mercado Pago: $${formatear(resReserva.montoTotal)}.`;
-        
-        if (resReserva.aplicaDescuento) {
-          msgPago += ` (Incluye ${resReserva.porcentajeAplicado}% de descuento por buena asistencia )`;
-        }
-        
-        toast.success(resReserva.message); 
-        toast.info(msgPago, { duration: 5000 });
-      } else {
-        toast.info('Abriendo Mercado Pago...', { duration: 2000 });
       }
 
       let pref;
@@ -233,8 +226,7 @@ export default function ReservaTurnos() {
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
             
             setEsperandoPago(false); 
-            // Eliminamos la solicitud confirmada del array
-            setSolicitudesEspera(prev => prev.filter(s => s.id !== solicitudPrincipal.id));
+            setSolicitudesEspera(prev => prev.filter(s => s.id !== solicitud.id));
             
             reservaIdsGrupoEsperaRef.current = null;
             grupoIdEsperaRef.current = null;
@@ -272,9 +264,10 @@ export default function ReservaTurnos() {
           }
           
           setEsperandoPago(false);
-          toast.error('Tiempo agotado para pagar. La oportunidad fue cancelada y pasará al siguiente en la lista.', { duration: 5000 });
+          await cargarEstadosEspera();
+          toast.error('Tiempo agotado para realizar el pago. La reserva fue cancelada.', { duration: 5000 });
         }
-      }, 5 * 60 * 1000);
+      }, LIMITE_PAGO_MS);
 
     } catch (error: any) {
       toast.error(error.message || 'Error al procesar tu respuesta');
@@ -358,6 +351,8 @@ useEffect(() => {
       }
     } catch (e) {
       setSolicitudesEspera([]);
+    } finally {
+      setListasEsperaCargadas(true);
     }
   };
 
@@ -463,7 +458,7 @@ useEffect(() => {
           if (intervaloRef.current) clearInterval(intervaloRef.current);
           if (timeoutRef.current) clearTimeout(timeoutRef.current);
           setEsperandoPago(false); 
-          toast.success('¡Pago confirmado por MercadoPago!');
+          toast.success('¡Pago confirmado por MercadoPago! Tu turno está reservado.');
         } else if (r.status === 'cancelado') {
           if (intervaloRef.current) clearInterval(intervaloRef.current);
           if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -488,7 +483,7 @@ useEffect(() => {
         setEsperandoPago(false);
         toast.error('Tiempo agotado para realizar el pago. La reserva fue cancelada.', { duration: 5000 });
       }
-    }, 12 * 60 * 60 * 1000); // 12 horas ajustadas en el backend
+    }, LIMITE_PAGO_MS);
   };
 
   const handleConfirmarReservaFija = async (fechasMensuales: Date[]) => {
@@ -566,7 +561,7 @@ useEffect(() => {
           reservaIdsGrupoEsperaRef.current = null;
           grupoIdEsperaRef.current = null;
           setEsperandoPago(false);
-          toast.success('¡Pago confirmado por MercadoPago!');
+          toast.success('¡Pago confirmado por MercadoPago! Tu turno está reservado.');
           resetSeleccion();
           setModalidad('UNICO');
         } else if (r.status === 'cancelado') {
@@ -598,7 +593,7 @@ useEffect(() => {
         setEsperandoPago(false);
         toast.error('Tiempo agotado para realizar el pago. La reserva fue cancelada.', { duration: 5000 });
       }
-    }, 5 * 60 * 1000);
+    }, LIMITE_PAGO_MS);
   };
 
   const handleCancelarPago = async () => {
@@ -631,6 +626,7 @@ useEffect(() => {
     }
     setEsperandoPago(false);
     setPagoConfirmado(false);
+    await cargarEstadosEspera();
   };
 
   const handleAnotarEnEspera = async () => {
@@ -659,13 +655,14 @@ useEffect(() => {
   return (
     <div className="w-full max-w-5xl mx-auto p-6 bg-white rounded-2xl border border-slate-100 shadow-md">
       
-      {/* Banner de Lista de Espera */}
-      {solicitudPrincipal && (
-        <div className="mb-6">
+      {/* Listas de Espera */}
+      <div className="mb-6">
+        {solicitudPrincipal ? (
           <BannerEspera 
             estado={solicitudPrincipal.estado} 
             personasAdelante={solicitudPrincipal.personasAdelante}
             totalActivas={solicitudesEspera.length}
+            fechaExpiracion={solicitudPrincipal.fechaExpiracion}
             onVerTodas={() => setModalListasAbierto(true)}
             turnoInfo={{
               actividad: solicitudPrincipal.turno?.tipoActividad?.nombre || 'Turno', 
@@ -677,8 +674,20 @@ useEffect(() => {
             onRechazar={() => handleResponderNotificacion(false)}
             cargando={cargandoCancelacion}
           />
-        </div>
-      )}
+        ) : listasEsperaCargadas ? (
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-start gap-3 shadow-sm">
+            <div className="bg-slate-100 p-2 rounded-full text-slate-500 shrink-0">
+              <Users className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="font-bold text-slate-700">Listas de espera</h4>
+              <p className="text-sm text-slate-500 mt-1">
+                No posees solicitudes en listas de espera.
+              </p>
+            </div>
+          </div>
+        ) : null}
+      </div>
         
       {/* Selector de Modalidad */}
       <div className="mb-2">
@@ -760,7 +769,7 @@ useEffect(() => {
             <div className="mx-auto mb-5 w-12 h-12 border-4 border-teal-600 border-t-transparent rounded-full animate-spin" />
             <h2 className="text-xl font-bold text-slate-800 mb-2">Esperando confirmación del pago…</h2>
             <p className="text-sm text-slate-600 mb-4">
-              Completá el pago en la pestaña de MercadoPago que se abrió.
+              Completá el pago en la pestaña de MercadoPago que se abrió. Tenés 5 minutos para hacerlo.
             </p>
             <p className="text-xs text-slate-400 bg-slate-50 p-3 rounded-xl border border-slate-100">
               No cierres esta ventana, vamos a confirmar tu reserva automáticamente al recibir el aviso de MercadoPago.
@@ -781,7 +790,12 @@ useEffect(() => {
           <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-xl">
             <h3 className="font-bold text-lg mb-4 text-slate-800">Mis listas de espera activas</h3>
             <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
-              {[...solicitudesEspera].sort(ordenarSolicitudesPorFechaHora).map((s) => (
+              {solicitudesEspera.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-6">
+                  No te encontrás anotado en ninguna lista de espera activa.
+                </p>
+              ) : (
+                [...solicitudesEspera].sort(ordenarSolicitudesPorFechaHora).map((s) => (
                 <div key={s.id} className="p-3 border border-slate-200 rounded-lg bg-slate-50 flex justify-between items-center shadow-sm">
                   <div>
                     <p className="text-sm font-bold text-slate-700">{s.turno?.tipoActividad?.nombre || 'Turno'}</p>
@@ -824,7 +838,8 @@ useEffect(() => {
                     )}
                   </div>
                 </div>
-              ))}
+                ))
+              )}
             </div>
             <button 
               onClick={() => setModalListasAbierto(false)}

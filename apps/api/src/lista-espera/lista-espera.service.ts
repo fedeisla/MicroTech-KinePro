@@ -8,6 +8,21 @@ import * as crypto from 'crypto';
 export class ListaEsperaService {
   constructor(private prisma: PrismaService, private eventEmitter: EventEmitter2) {}
 
+  private async obtenerHorasExpiracion(): Promise<number> {
+    const config = await this.prisma.configuracionSistema.findUnique({ where: { id: 1 } });
+    return config?.horasExpiracionEspera ?? 12;
+  }
+
+  private obtenerFechaExpiracion(
+    fechaNotificacion: Date | null | undefined,
+    horasLimite: number,
+  ): string | null {
+    if (!fechaNotificacion) return null;
+    return new Date(
+      fechaNotificacion.getTime() + horasLimite * 60 * 60 * 1000,
+    ).toISOString();
+  }
+
 
   async obtenerEstadosPaciente(pacienteId: number) {
     const esperas = await this.prisma.listaEspera.findMany({
@@ -24,6 +39,8 @@ export class ListaEsperaService {
     });
 
     if (!esperas || esperas.length === 0) return [];
+
+    const horasLimite = await this.obtenerHorasExpiracion();
 
     // 2. Calculamos las personas por delante para CADA UNA de las solicitudes
     const resultados = await Promise.all(
@@ -44,7 +61,14 @@ export class ListaEsperaService {
           }
         });
 
-        return { ...espera, personasAdelante };
+        const resultado: Record<string, unknown> = { ...espera, personasAdelante };
+
+        if (espera.estado === EstadoListaEspera.NOTIFICADO) {
+          const fechaExpiracion = this.obtenerFechaExpiracion(espera.fecha_notificacion, horasLimite);
+          if (fechaExpiracion) resultado.fechaExpiracion = fechaExpiracion;
+        }
+
+        return resultado;
       })
     );
 
@@ -88,34 +112,36 @@ async inscribirPaciente(turnoId: number, pacienteId: number, prioridad: number) 
 
   this.validarTurnoNoPasado(turno);
 
-  //Validar que no tenga reservas activas (CONFIRMADA o PENDIENTE) ese mismo día
-  const reservaMismoDia = await this.prisma.reserva.findFirst({
+  // Validar que no tenga reservas activas (CONFIRMADA o PENDIENTE) ese mismo día y horario
+  const reservaMismoDiaYHorario = await this.prisma.reserva.findFirst({
     where: {
       paciente_id: pacienteId,
-      estado: { in: [EstadoReserva.PENDIENTE, EstadoReserva.CONFIRMADA] }, 
+      estado: { in: [EstadoReserva.PENDIENTE, EstadoReserva.CONFIRMADA] },
       turno: {
         fecha: turno.fecha,
+        hora_inicio: turno.hora_inicio,
       },
     },
   });
 
-  if (reservaMismoDia) {
-    throw new BadRequestException('El paciente ya posee un turno activo para el día seleccionado.');
+  if (reservaMismoDiaYHorario) {
+    throw new BadRequestException('El paciente ya posee un turno activo para el día y horario seleccionado.');
   }
 
-  //Validar que no esté ya en la lista de espera para CUALQUIER turno de ese mismo día
-  const esperaMismoDia = await this.prisma.listaEspera.findFirst({
+  // Validar que no esté ya en la lista de espera para ese mismo día y horario
+  const esperaMismoDiaYHorario = await this.prisma.listaEspera.findFirst({
     where: {
       paciente_id: pacienteId,
       estado: { in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO] },
       turno: {
         fecha: turno.fecha,
+        hora_inicio: turno.hora_inicio,
       },
     },
   });
-  
-  if (esperaMismoDia) {
-    throw new BadRequestException('El paciente ya se encuentra registrado en una lista de espera para el día seleccionado.');
+
+  if (esperaMismoDiaYHorario) {
+    throw new BadRequestException('El paciente ya se encuentra registrado en una lista de espera para el día y horario seleccionado.');
   }
 
   // 3. Lógica de capacidad de la lista

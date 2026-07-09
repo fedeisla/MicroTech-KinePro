@@ -153,7 +153,7 @@ export default function TabInscriptos({ detalle, fecha, esAdmin, estaLleno = fal
 
       try {
         await registrarPago({ reserva_id: reservaId, metodo: metodoPago as 'EFECTIVO' | 'TARJETA' })
-        toast.success('Pago registrado con éxito')
+        toast.success('Pago registrado con éxito. Turno reservado.')
       } catch (pagoErr: any) {
         toast.error('No se pudo registrar el pago', { description: pagoErr.message })
       }
@@ -252,7 +252,7 @@ export default function TabInscriptos({ detalle, fecha, esAdmin, estaLleno = fal
           
           {estaLleno && (
             <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-md text-xs mb-3 font-medium">
-              El turno actual está completo. El paciente será anotado directamente en la <strong>Lista de Espera</strong>.
+              El turno actual se encuentra completo. El paciente será anotado en la lista de espera.
             </div>
           )}
 
