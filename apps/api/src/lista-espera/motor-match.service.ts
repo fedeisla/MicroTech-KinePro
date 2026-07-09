@@ -156,7 +156,7 @@ export class MotorMatchService {
             tipo: TipoNotificacion.CANCELACION_TURNO, 
             canal: 'EMAIL',
             enviarEmail: true,
-            email: "Federicoisla1@gmail.com",
+            email: "pablocabe27@gmail.com",
           });
           
           this.logger.log(`Email de expiración enviado correctamente al paciente ID ${expirado.paciente_id}`);
