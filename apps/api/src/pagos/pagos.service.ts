@@ -7,6 +7,7 @@ import { CrearPagoDto, ListarHistorialPagosDto } from './pagos.dto'
 import { ConfiguracionService } from '@/configuracion/configuracion.service'
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago'
 import { EstadoListaEspera } from '@prisma/client'
+import { buildTurnoConfirmadoEmailHtml } from '@/mail/turno-confirmado.template'
 
 @Injectable()
 export class PagosService {
@@ -650,6 +651,11 @@ export class PagosService {
       include: {
         turno: { include: { tipoActividad: true } },
         paciente: { include: { usuario: true } },
+        pagos: {
+          where: { estado: 'COMPLETADO' },
+          orderBy: { id: 'desc' },
+          take: 1,
+        },
       },
     })
     if (!reserva || !reserva.paciente?.usuario) return
@@ -664,16 +670,31 @@ export class PagosService {
     ))
     const fechaStr = fechaTurno.toLocaleDateString('es-AR')
     const horaStr = turno.hora_inicio.getUTCHours().toString().padStart(2, '0') + ':' + turno.hora_inicio.getUTCMinutes().toString().padStart(2, '0')
+    const pagoCompletado = reserva.pagos[0]
+    const descripcion = `Su turno para la actividad ${turno.tipoActividad.nombre} ha sido confirmado para el día ${fechaStr} a las ${horaStr}hs.`
+    const html = buildTurnoConfirmadoEmailHtml({
+      actividadNombre: turno.tipoActividad.nombre,
+      fechaStr,
+      horaStr,
+      pago: pagoCompletado
+        ? {
+            fecha_pago: pagoCompletado.fecha_pago,
+            monto: Number(pagoCompletado.monto),
+            metodo: pagoCompletado.metodo,
+          }
+        : undefined,
+    })
 
     await this.notificacionesService.crearNotificacion({
       pacienteId: reserva.paciente_id,
       reservaId: reserva.id,
       titulo: 'Turno confirmado',
-      descripcion: `Su turno para la actividad ${turno.tipoActividad.nombre} ha sido confirmado para el día ${fechaStr} a las ${horaStr}hs.`,
+      descripcion,
       tipo: 'INFORMATIVA',
       canal: 'EMAIL',
       enviarEmail: true,
       email: reserva.paciente.usuario.email,
+      html,
     })
 
     const fechaEnvioRecordatorio = new Date(fechaTurno.getTime() - 24 * 60 * 60 * 1000)
