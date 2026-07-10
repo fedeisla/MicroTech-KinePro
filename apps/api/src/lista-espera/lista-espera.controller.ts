@@ -26,7 +26,7 @@ export class ListaEsperaController {
   async inscribir(@Req() req, @Body() body: { turnoId: number; prioridad: number }) {
     // Acá garantizamos que el paciente solo pueda anotarse a sí mismo usando su token
     const pacienteId = req.user.pacienteId;
-    return this.listaEsperaService.inscribirPaciente(body.turnoId, pacienteId, body.prioridad);
+    return this.listaEsperaService.inscribirPaciente(body.turnoId, pacienteId, body.prioridad, 'paciente');
   }
   
   // --- VIRTUAL (Paciente - usa su token) ---

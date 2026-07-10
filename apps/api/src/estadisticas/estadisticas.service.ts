@@ -28,11 +28,24 @@ export class EstadisticasService {
   async obtenerCancelaciones(desde: string, hasta: string) {
     const { fechaDesde, fechaHastaFin } = this.validarRango(desde, hasta);
 
-    // Contabilizar cancelaciones según la fecha en que se realizó la acción
+    // Contabilizar cancelaciones reales (turno que estuvo confirmado) según fecha_estado.
+    // Excluye abandonos de pago MP: PENDIENTE → CANCELADA deja un pago MERCADOPAGO PENDIENTE/RECHAZADO
+    // sin pago COMPLETADO. Las presenciales (CONFIRMADA sin pasar por MP) no tienen ese pago.
     const total = await this.prisma.reserva.count({
       where: {
         estado: EstadoReserva.CANCELADA,
         fecha_estado: { gte: fechaDesde, lte: fechaHastaFin },
+        OR: [
+          { pagos: { some: { estado: EstadoPago.COMPLETADO } } },
+          {
+            pagos: {
+              none: {
+                metodo: MetodoPago.MERCADOPAGO,
+                estado: { in: [EstadoPago.PENDIENTE, EstadoPago.RECHAZADO] },
+              },
+            },
+          },
+        ],
       },
     });
 

@@ -161,6 +161,7 @@ export class ReservaService {
     reservaId: number,
     turno: { fecha: Date; hora_inicio: Date },
     actividadNombre: string,
+    conReintegro: boolean,
     email?: string,
   ) {
     if (!email) return;
@@ -175,11 +176,16 @@ export class ReservaService {
     const fechaStr = fechaTurno.toLocaleDateString('es-AR');
     const horaStr = turno.hora_inicio.getUTCHours().toString().padStart(2, '0') + ':' + turno.hora_inicio.getUTCMinutes().toString().padStart(2, '0');
 
+    const titulo = conReintegro ? 'Turno cancelado con reintegro' : 'Turno cancelado sin reintegro';
+    const descripcion = conReintegro
+      ? `Su turno para la actividad ${actividadNombre} del día ${fechaStr} a las ${horaStr}hs fue cancelado con reintegro`
+      : `Su turno para la actividad ${actividadNombre} del día ${fechaStr} a las ${horaStr}hs fue cancelado sin reintegro`;
+
     await this.notificacionesService.crearNotificacion({
       pacienteId,
       reservaId,
-      titulo: 'Turno cancelado',
-      descripcion: `Su turno para la actividad ${actividadNombre} el día ${fechaStr} a las ${horaStr}hs fue cancelado.`,
+      titulo,
+      descripcion,
       tipo: 'CANCELACION_TURNO',
       canal: 'EMAIL',
       enviarEmail: true,
@@ -302,11 +308,12 @@ export class ReservaService {
     return (turnoDT.getTime() - now.getTime()) / (1000 * 60 * 60);
   }
 
-  private assertPuedeCancelarReserva(reserva: { turno: { fecha: Date; hora_inicio: Date } }) {
-    const horas = this.horasHastaTurno(reserva);
-    if (horas < 48) {
-      throw new BadRequestException('No es posible cancelar porque restan menos de 48 horas para el inicio del turno');
-    }
+  private cancelacionConReintegro(reserva: { turno: { fecha: Date; hora_inicio: Date } }) {
+    return this.horasHastaTurno(reserva) >= 48;
+  }
+
+  private mensajeCancelacionTurno(conReintegro: boolean) {
+    return conReintegro ? 'Turno cancelado con reintegro' : 'Turno cancelado sin reintegro';
   }
 
   private async assertReservaEsDelPaciente(reservaId: number, pacienteId: number) {
@@ -475,14 +482,14 @@ export class ReservaService {
       if (updateReservaDto.estado !== EstadoReserva.CANCELADA) {
         throw new BadRequestException('Cambio de estado no permitido');
       }
-      this.assertPuedeCancelarReserva(reservaActual);
-      await this.cancelarReserva(id, reservaActual.turno_id);
+      const conReintegro = this.cancelacionConReintegro(reservaActual);
+      await this.cancelarReserva(id, reservaActual.turno_id, conReintegro);
       const ausencias = await this.prisma.reserva.count({
         where: { paciente_id: pacienteId, estado: EstadoReserva.AUSENTE },
       });
       const horas = this.horasHastaTurno(reservaActual);
       const puedeReprogramar = horas >= 48 && ausencias < 2 && reservaActual.cant_reprogramaciones < 2;
-      return { message: 'Reserva cancelada', puedeReprogramar };
+      return { message: this.mensajeCancelacionTurno(conReintegro), puedeReprogramar };
     }
 
     // Caso 2: reprogramación (cambio de turno)
@@ -620,15 +627,15 @@ export class ReservaService {
     if (reserva.estado === EstadoReserva.CANCELADA) {
       return { message: 'Turno cancelado' };
     }
-    this.assertPuedeCancelarReserva(reserva);
+    const conReintegro = this.cancelacionConReintegro(reserva);
     try {
-      await this.cancelarReserva(reservaId, reserva.turno_id);
+      await this.cancelarReserva(reservaId, reserva.turno_id, conReintegro);
     } catch (error) {
       if (error instanceof HttpException) throw error;
       this.logger.error(`Error al cancelar la reserva presencial: ${String(error)}`);
       throw new InternalServerErrorException('Ocurrió un error inesperado al cancelar el turno');
     }
-    return { message: 'Turno cancelado' };
+    return { message: this.mensajeCancelacionTurno(conReintegro) };
   }
 
   private async assertReservaExiste(reservaId: number) {
@@ -814,7 +821,7 @@ export class ReservaService {
     return `This action updates a #${id} reserva`;
   }
 
-  private async cancelarReserva(reservaId: number, turnoId: number) {
+  private async cancelarReserva(reservaId: number, turnoId: number, conReintegro: boolean) {
     await this.prisma.$transaction(async (tx) => {
       await tx.reserva.update({
         where: { id: reservaId },
@@ -837,6 +844,7 @@ export class ReservaService {
           reserva.id,
           reserva.turno,
           reserva.turno.tipoActividad.nombre,
+          conReintegro,
           reserva.paciente.usuario.email,
         );
       }
@@ -855,9 +863,9 @@ export class ReservaService {
       const puedeReprogramar = horas >= 48 && ausencias < 2 && reservaActual.cant_reprogramaciones < 2;
       return { message: 'La reserva ya estaba cancelada', puedeReprogramar };
     }
-    this.assertPuedeCancelarReserva(reservaActual);
+    const conReintegro = this.cancelacionConReintegro(reservaActual);
     try {
-      await this.cancelarReserva(id, reservaActual.turno_id);
+      await this.cancelarReserva(id, reservaActual.turno_id, conReintegro);
     } catch (error) {
       if (error instanceof HttpException) throw error;
       this.logger.error(`Error al cancelar la reserva: ${String(error)}`);
@@ -869,7 +877,7 @@ export class ReservaService {
     const horas = this.horasHastaTurno(reservaActual);
     const puedeReprogramar = horas >= 48 && ausencias < 2 && reservaActual.cant_reprogramaciones < 2;
       
-    return { message: 'Reserva cancelada', puedeReprogramar };
+    return { message: this.mensajeCancelacionTurno(conReintegro), puedeReprogramar };
   
     // NOTA: mantenemos el registro (no hard delete)
   }

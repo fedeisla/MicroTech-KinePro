@@ -76,7 +76,7 @@ export default function PanelMensual({
       toast.success(`Solicitud agregada a la lista de espera (Prioridad ${prioridad})`);
       setFaltaDisponibilidad(false);
     } catch (err: any) {
-      toast.error('Error al agregar a la lista de espera', { description: err.message });
+      toast.error('Error al anotar en la lista de espera', { description: err.message });
     }
   };
 

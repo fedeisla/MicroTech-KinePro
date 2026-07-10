@@ -106,7 +106,12 @@ export class ListaEsperaService {
     return { ...espera, personasAdelante };
   }
 
-async inscribirPaciente(turnoId: number, pacienteId: number, prioridad: number) {
+async inscribirPaciente(
+  turnoId: number,
+  pacienteId: number,
+  prioridad: number,
+  flujo: 'paciente' | 'presencial' = 'presencial',
+) {
   const turno = await this.prisma.turno.findUnique({ where: { id: turnoId } });
   if (!turno) throw new NotFoundException('El turno no existe.');
 
@@ -128,20 +133,40 @@ async inscribirPaciente(turnoId: number, pacienteId: number, prioridad: number) 
     throw new BadRequestException('El paciente ya posee un turno activo para el día y horario seleccionado.');
   }
 
-  // Validar que no esté ya en la lista de espera para ese mismo día y horario
-  const esperaMismoDiaYHorario = await this.prisma.listaEspera.findFirst({
+  // Validar que no esté ya en esta lista de espera
+  const esperaMismaLista = await this.prisma.listaEspera.findFirst({
+    where: {
+      paciente_id: pacienteId,
+      turno_id: turnoId,
+      estado: { in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO] },
+    },
+  });
+
+  if (esperaMismaLista) {
+    const mensaje = flujo === 'paciente'
+      ? 'Ya te encuentras anotado en esta lista de espera.'
+      : 'El paciente ya se encuentra anotado en esta lista de espera.';
+    throw new BadRequestException(mensaje);
+  }
+
+  // Validar que no esté en otra lista de espera para ese mismo día y horario
+  const esperaOtroTurnoMismoDiaYHorario = await this.prisma.listaEspera.findFirst({
     where: {
       paciente_id: pacienteId,
       estado: { in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO] },
       turno: {
         fecha: turno.fecha,
         hora_inicio: turno.hora_inicio,
+        id: { not: turnoId },
       },
     },
   });
 
-  if (esperaMismoDiaYHorario) {
-    throw new BadRequestException('El paciente ya se encuentra registrado en una lista de espera para el día y horario seleccionado.');
+  if (esperaOtroTurnoMismoDiaYHorario) {
+    const mensaje = flujo === 'paciente'
+      ? 'Ya te encuentras anotado en una lista de espera para el día y horario seleccionado.'
+      : 'El paciente ya se encuentra anotado en una lista de espera para el día y horario seleccionado.';
+    throw new BadRequestException(mensaje);
   }
 
   // 3. Lógica de capacidad de la lista

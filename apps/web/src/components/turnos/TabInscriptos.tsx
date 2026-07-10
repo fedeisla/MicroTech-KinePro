@@ -355,7 +355,7 @@ export default function TabInscriptos({ detalle, fecha, esAdmin, estaLleno = fal
 
               <div className="flex gap-2">
                 <button disabled={loading} onClick={handleAgregarAListaEspera} className="w-full px-3 py-2 rounded-md bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 transition-colors disabled:opacity-50">
-                  {loading ? 'Ingresando...' : 'Agregar a la lista de espera'}
+                  {loading ? 'Ingresando...' : 'Anotar en la lista de espera'}
                 </button>
               </div>
             </div>

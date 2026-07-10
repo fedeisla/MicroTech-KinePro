@@ -139,9 +139,6 @@ export default function TablaHistorialPagos() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="bg-teal-50 text-teal-700 text-xs font-bold px-3 py-1.5 rounded-full border border-teal-100">
-            Mostrando: {pagos.length}
-          </span>
           {pacienteFiltroId && (
             <button
               type="button"
