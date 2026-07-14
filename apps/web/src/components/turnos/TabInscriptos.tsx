@@ -126,9 +126,11 @@ export default function TabInscriptos({ detalle, fecha, esAdmin, estaLleno = fal
       setMostrarBotonEsperaFijo(false)
       if (onReservaCreada) await onReservaCreada()
     } catch (err: any) {
-      toast.error('No se pudo agregar al paciente', { 
-        description: err.message || 'La lista de espera se encuentra completa.' 
-      })
+      const detalle = err.message || 'La lista de espera se encuentra completa.';
+      const parsed = tituloYMensajeDesdeApi(detalle);
+      toast.error(parsed.mensaje ? parsed.titulo : 'No se pudo agregar al paciente', {
+        description: parsed.mensaje || detalle,
+      });
     } finally {
       setLoading(false)
     }

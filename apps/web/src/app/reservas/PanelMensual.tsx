@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { getTurnoById } from '@/services/turnosService';
 import { chequearDescuento } from '@/services/reservasService';
 import { listaEsperaService } from '@/services/listaEsperaService';
+import { tituloYMensajeDesdeApi } from '@/app/Components/InfoDialog';
 
 interface Props {
   mesActual: number;
@@ -68,7 +69,7 @@ export default function PanelMensual({
       
       if (adminMode) {
         if (!adminEmail) return toast.error('Se requiere email del paciente');
-        await listaEsperaService.inscribirTurnoFijoPresencial(adminEmail, actividadSeleccionada.id, fechasString);
+        await listaEsperaService.inscribirTurnoFijoPresencial(adminEmail, actividadSeleccionada.id, fechasString, prioridad);
       } else {
         await listaEsperaService.inscribirTurnoFijoVirtual(actividadSeleccionada.id, fechasString);
       }
@@ -76,7 +77,11 @@ export default function PanelMensual({
       toast.success(`Solicitud agregada a la lista de espera (Prioridad ${prioridad})`);
       setFaltaDisponibilidad(false);
     } catch (err: any) {
-      toast.error('Error al anotar en la lista de espera', { description: err.message });
+      const detalle = err.message || 'Error al anotar en la lista de espera';
+      const parsed = tituloYMensajeDesdeApi(detalle);
+      toast.error(parsed.mensaje ? parsed.titulo : 'Error al anotar en la lista de espera', {
+        description: parsed.mensaje || detalle,
+      });
     }
   };
 

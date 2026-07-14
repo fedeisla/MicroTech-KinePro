@@ -113,6 +113,27 @@ export default function ReservaTurnos() {
   const reservaIdEsperaRef = useRef<number | null>(null);
   const reservaIdsGrupoEsperaRef = useRef<number[] | null>(null);
   const grupoIdEsperaRef = useRef<number | null>(null);
+  const pagoConfirmadoRef = useRef(false);
+
+  const limpiarPollingPago = () => {
+    if (intervaloRef.current) {
+      clearInterval(intervaloRef.current);
+      intervaloRef.current = null;
+    }
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  };
+
+  const notificarPagoConfirmado = () => {
+    if (pagoConfirmadoRef.current) return;
+    pagoConfirmadoRef.current = true;
+    limpiarPollingPago();
+    setEsperandoPago(false);
+    setPagoConfirmado(true);
+    toast.success('¡Pago confirmado por MercadoPago! Tu turno está reservado.');
+  };
 
   const [faltaDisponibilidad, setFaltaDisponibilidad] = useState(false);
 
@@ -204,6 +225,7 @@ export default function ReservaTurnos() {
 
       setEsperandoPago(true);
       setPagoConfirmado(false);
+      pagoConfirmadoRef.current = false;
       
       if (esFijo) {
         reservaIdsGrupoEsperaRef.current = resReserva.reservaIds!;
@@ -213,6 +235,7 @@ export default function ReservaTurnos() {
       }
 
       intervaloRef.current = setInterval(async () => {
+        if (pagoConfirmadoRef.current) return;
         try {
           let r;
           if (esFijo) {
@@ -222,25 +245,18 @@ export default function ReservaTurnos() {
           }
 
           if (r.status === 'ok') {
-            if (intervaloRef.current) clearInterval(intervaloRef.current);
-            if (timeoutRef.current) clearTimeout(timeoutRef.current);
-            
-            setEsperandoPago(false); 
+            notificarPagoConfirmado();
             setSolicitudesEspera(prev => prev.filter(s => s.id !== solicitud.id));
             
             reservaIdsGrupoEsperaRef.current = null;
             grupoIdEsperaRef.current = null;
             reservaIdEsperaRef.current = null;
-            
-            toast.success('¡Pago confirmado por MercadoPago! Tu turno está reservado.');
           } else if (r.status === 'cancelado') {
-            if (intervaloRef.current) clearInterval(intervaloRef.current);
-            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            limpiarPollingPago();
             setEsperandoPago(false);
             toast.error('La reserva fue cancelada.');
           } else if (r.status === 'rechazado') {
-            if (intervaloRef.current) clearInterval(intervaloRef.current);
-            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            limpiarPollingPago();
             setEsperandoPago(false);
             toast.error('El pago fue rechazado por MercadoPago.');
           }
@@ -250,23 +266,22 @@ export default function ReservaTurnos() {
       }, 3000);
 
       timeoutRef.current = setTimeout(async () => {
-        if (intervaloRef.current) clearInterval(intervaloRef.current);
-        if (!pagoConfirmado) {
-          if (esFijo) {
-            await cancelarPagoMPFijo(resReserva.reservaIds!).catch(() => {});
-            reservaIdsGrupoEsperaRef.current = null;
-            grupoIdEsperaRef.current = null;
-          } else {
-            if (resReserva?.reservaId) {
-              await cancelarPagoMP(resReserva.reservaId!).catch(() => {});
-            }
-            reservaIdEsperaRef.current = null;
+        if (pagoConfirmadoRef.current) return;
+        limpiarPollingPago();
+        if (esFijo) {
+          await cancelarPagoMPFijo(resReserva.reservaIds!).catch(() => {});
+          reservaIdsGrupoEsperaRef.current = null;
+          grupoIdEsperaRef.current = null;
+        } else {
+          if (resReserva?.reservaId) {
+            await cancelarPagoMP(resReserva.reservaId!).catch(() => {});
           }
-          
-          setEsperandoPago(false);
-          await cargarEstadosEspera();
-          toast.error('Tiempo agotado para realizar el pago. La reserva fue cancelada.', { duration: 5000 });
+          reservaIdEsperaRef.current = null;
         }
+
+        setEsperandoPago(false);
+        await cargarEstadosEspera();
+        toast.error('Tiempo agotado para realizar el pago. La reserva fue cancelada.', { duration: 5000 });
       }, LIMITE_PAGO_MS);
 
     } catch (error: any) {
@@ -448,25 +463,22 @@ useEffect(() => {
 
     setEsperandoPago(true);
     setPagoConfirmado(false);
+    pagoConfirmadoRef.current = false;
     reservaIdEsperaRef.current = resReserva.reservaId;
 
     intervaloRef.current = setInterval(async () => {
+      if (pagoConfirmadoRef.current) return;
       try {
         const r = await verificarPagoMP(resReserva.reservaId);
         if (r.status === 'ok') {
-          console.log('LLEGÓ EL OK - cerrando modal');
-          if (intervaloRef.current) clearInterval(intervaloRef.current);
-          if (timeoutRef.current) clearTimeout(timeoutRef.current);
-          setEsperandoPago(false); 
-          toast.success('¡Pago confirmado por MercadoPago! Tu turno está reservado.');
+          notificarPagoConfirmado();
+          reservaIdEsperaRef.current = null;
         } else if (r.status === 'cancelado') {
-          if (intervaloRef.current) clearInterval(intervaloRef.current);
-          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          limpiarPollingPago();
           setEsperandoPago(false);
           toast.error('La reserva fue cancelada');
         } else if (r.status === 'rechazado') {
-          if (intervaloRef.current) clearInterval(intervaloRef.current);
-          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          limpiarPollingPago();
           setEsperandoPago(false);
           toast.error('El pago fue rechazado por MercadoPago');
         }
@@ -476,13 +488,12 @@ useEffect(() => {
     }, 3000);
 
     timeoutRef.current = setTimeout(async () => {
-      if (intervaloRef.current) clearInterval(intervaloRef.current);
-      if (!pagoConfirmado) {
-        await cancelarPagoMP(resReserva.reservaId).catch(() => {});
-        reservaIdEsperaRef.current = null;
-        setEsperandoPago(false);
-        toast.error('Tiempo agotado para realizar el pago. La reserva fue cancelada.', { duration: 5000 });
-      }
+      if (pagoConfirmadoRef.current) return;
+      limpiarPollingPago();
+      await cancelarPagoMP(resReserva.reservaId).catch(() => {});
+      reservaIdEsperaRef.current = null;
+      setEsperandoPago(false);
+      toast.error('Tiempo agotado para realizar el pago. La reserva fue cancelada.', { duration: 5000 });
     }, LIMITE_PAGO_MS);
   };
 
@@ -549,31 +560,28 @@ useEffect(() => {
 
     setEsperandoPago(true);
     setPagoConfirmado(false);
+    pagoConfirmadoRef.current = false;
     reservaIdsGrupoEsperaRef.current = reservaIds;
     grupoIdEsperaRef.current = pref.grupoId;
 
     intervaloRef.current = setInterval(async () => {
+      if (pagoConfirmadoRef.current) return;
       try {
         const r = await verificarPagoMPFijo(pref.grupoId);
         if (r.status === 'ok') {
-          if (intervaloRef.current) clearInterval(intervaloRef.current);
-          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          notificarPagoConfirmado();
           reservaIdsGrupoEsperaRef.current = null;
           grupoIdEsperaRef.current = null;
-          setEsperandoPago(false);
-          toast.success('¡Pago confirmado por MercadoPago! Tu turno está reservado.');
           resetSeleccion();
           setModalidad('UNICO');
         } else if (r.status === 'cancelado') {
-          if (intervaloRef.current) clearInterval(intervaloRef.current);
-          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          limpiarPollingPago();
           reservaIdsGrupoEsperaRef.current = null;
           grupoIdEsperaRef.current = null;
           setEsperandoPago(false);
           toast.error('La reserva fue cancelada');
         } else if (r.status === 'rechazado') {
-          if (intervaloRef.current) clearInterval(intervaloRef.current);
-          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          limpiarPollingPago();
           reservaIdsGrupoEsperaRef.current = null;
           grupoIdEsperaRef.current = null;
           setEsperandoPago(false);
@@ -585,26 +593,18 @@ useEffect(() => {
     }, 3000);
 
     timeoutRef.current = setTimeout(async () => {
-      if (intervaloRef.current) clearInterval(intervaloRef.current);
-      if (!pagoConfirmado) {
-        await cancelarPagoMPFijo(reservaIds).catch(() => {});
-        reservaIdsGrupoEsperaRef.current = null;
-        grupoIdEsperaRef.current = null;
-        setEsperandoPago(false);
-        toast.error('Tiempo agotado para realizar el pago. La reserva fue cancelada.', { duration: 5000 });
-      }
+      if (pagoConfirmadoRef.current) return;
+      limpiarPollingPago();
+      await cancelarPagoMPFijo(reservaIds).catch(() => {});
+      reservaIdsGrupoEsperaRef.current = null;
+      grupoIdEsperaRef.current = null;
+      setEsperandoPago(false);
+      toast.error('Tiempo agotado para realizar el pago. La reserva fue cancelada.', { duration: 5000 });
     }, LIMITE_PAGO_MS);
   };
 
   const handleCancelarPago = async () => {
-    if (intervaloRef.current) {
-      clearInterval(intervaloRef.current);
-      intervaloRef.current = null;
-    }
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
+    limpiarPollingPago();
     if (reservaIdEsperaRef.current) {
       try {
         await cancelarPagoMP(reservaIdEsperaRef.current);
@@ -626,6 +626,7 @@ useEffect(() => {
     }
     setEsperandoPago(false);
     setPagoConfirmado(false);
+    pagoConfirmadoRef.current = false;
     await cargarEstadosEspera();
   };
 

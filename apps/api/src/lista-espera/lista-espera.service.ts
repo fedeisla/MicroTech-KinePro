@@ -169,18 +169,8 @@ async inscribirPaciente(
     throw new BadRequestException(mensaje);
   }
 
-  // 3. Lógica de capacidad de la lista
-  const config = await this.prisma.configuracionSistema.findUnique({ where: { id: 1 } });
-  const porcentaje = config?.porcentajeListaEspera || 20;
-  let limiteLista = Math.floor((turno.capacidad * (porcentaje / 100)) / 2);
-
-  if (limiteLista === 0 && turno.capacidad > 0 && porcentaje > 0) limiteLista = 1;
-
-  const ocupacionActual = await this.prisma.listaEspera.count({
-    where: { turno_id: turnoId, prioridad, estado: EstadoListaEspera.PENDIENTE }
-  });
-
-  if (ocupacionActual >= limiteLista) {
+  const listaCompleta = await this.estaListaEsperaCompleta(turnoId, prioridad, turno.capacidad);
+  if (listaCompleta) {
     throw new BadRequestException('La lista de espera se encuentra completa.');
   }
 
@@ -191,8 +181,7 @@ async inscribirPaciente(
 }
 
   async inscribirTurnoFijoVirtual(pacienteId: number, turnoInicialId: number, fechasString: string[]) {
-
-    return await this._registrarBloqueFijo(pacienteId, turnoInicialId, fechasString, 1);
+    return await this._registrarBloqueFijo(pacienteId, turnoInicialId, fechasString, 1, 'paciente');
   }
 
   async inscribirTurnoFijoPresencial(email: string, turnoInicialId: number, fechasString: string[], prioridad: number) {
@@ -204,10 +193,16 @@ async inscribirPaciente(
       throw new NotFoundException(`No se encontró un paciente registrado con el email: ${email}`);
     }
 
-    return await this._registrarBloqueFijo(paciente.id, turnoInicialId, fechasString, prioridad);
+    return await this._registrarBloqueFijo(paciente.id, turnoInicialId, fechasString, prioridad, 'presencial');
   }
 
-  private async _registrarBloqueFijo(pacienteId: number, turnoInicialId: number, fechasString: string[], prioridad: number) {
+  private async _registrarBloqueFijo(
+    pacienteId: number,
+    turnoInicialId: number,
+    fechasString: string[],
+    prioridad: number,
+    flujo: 'paciente' | 'presencial' = 'presencial',
+  ) {
     const turnoBase = await this.prisma.turno.findUnique({
       where: { id: turnoInicialId },
     });
@@ -233,6 +228,22 @@ async inscribirPaciente(
       this.validarTurnoNoPasado(turno);
     }
 
+    const fechasTurnos = turnos.map((t) => t.fecha);
+    const diasConReserva = await this.obtenerDiasConReservaActiva(
+      pacienteId,
+      fechasTurnos,
+      turnoBase.hora_inicio,
+    );
+
+    if (diasConReserva.length > 0) {
+      const horaStr = this.formatearHoraTurno(turnoBase.hora_inicio);
+      const diasStr = diasConReserva.map((f) => this.formatearDiaTurno(f)).join(', ');
+      const mensaje = flujo === 'paciente'
+        ? `Ya posees turnos reservados en los siguientes días a las ${horaStr}: ${diasStr}`
+        : `El paciente ya posee un turno reservado los siguientes días a las ${horaStr}: ${diasStr}`;
+      throw new BadRequestException(mensaje);
+    }
+
     const turnoIds = turnos.map(t => t.id);
 
     const hayAlgunoLleno = turnos.some(t => t.cantidad_inscriptos >= t.capacidad);
@@ -240,16 +251,81 @@ async inscribirPaciente(
     if (!hayAlgunoLleno) {
       throw new BadRequestException('Para solicitar un turno fijo, al menos una de las fechas debe estar llena.');
     }
-    const existente = await this.prisma.listaEspera.findFirst({
+
+    const diasConListaCompleta: { fecha: Date; etiqueta: string }[] = [];
+    for (const turno of turnos) {
+      const completa = await this.estaListaEsperaCompleta(turno.id, prioridad, turno.capacidad);
+      if (completa) {
+        diasConListaCompleta.push({
+          fecha: turno.fecha,
+          etiqueta: this.formatearDiaTurno(turno.fecha),
+        });
+      }
+    }
+
+    if (diasConListaCompleta.length > 0) {
+      const diasStr = diasConListaCompleta
+        .sort((a, b) => a.fecha.getTime() - b.fecha.getTime())
+        .map((d) => d.etiqueta)
+        .join(', ');
+      const mensaje = flujo === 'paciente'
+        ? `No es posible anotarse. Las listas de espera de los siguientes días se encuentran completas: ${diasStr}`
+        : `No es posible anotar al paciente. Las listas de espera de los siguientes días se encuentran completas: ${diasStr}`;
+      throw new BadRequestException(mensaje);
+    }
+
+    const esperasExistentes = await this.prisma.listaEspera.findMany({
       where: {
         paciente_id: pacienteId,
         turno_id: { in: turnoIds },
-        estado: { in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO] }
-      }
+        estado: { in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO] },
+      },
+      include: { turno: { select: { fecha: true } } },
     });
-    
-    if (existente) {
-      throw new BadRequestException('El paciente ya tiene una solicitud activa en uno de estos turnos.');
+
+    if (esperasExistentes.length > 0) {
+      const fechasUnicas = new Map<number, Date>();
+      for (const espera of esperasExistentes) {
+        fechasUnicas.set(espera.turno.fecha.getTime(), espera.turno.fecha);
+      }
+      const diasStr = Array.from(fechasUnicas.values())
+        .sort((a, b) => a.getTime() - b.getTime())
+        .map((f) => this.formatearDiaTurno(f))
+        .join(', ');
+      const horaStr = this.formatearHoraTurno(turnoBase.hora_inicio);
+      const mensaje = flujo === 'paciente'
+        ? `Ya te encuentras anotado en la lista de espera del turno de los siguientes días a las ${horaStr}: ${diasStr}`
+        : `El paciente ya se encuentra anotado en la lista de espera del turno de los siguientes días a las ${horaStr}: ${diasStr}`;
+      throw new BadRequestException(mensaje);
+    }
+
+    const esperasSuperpuestas = await this.prisma.listaEspera.findMany({
+      where: {
+        paciente_id: pacienteId,
+        estado: { in: [EstadoListaEspera.PENDIENTE, EstadoListaEspera.NOTIFICADO] },
+        turno: {
+          fecha: { in: fechasTurnos },
+          hora_inicio: turnoBase.hora_inicio,
+          id: { notIn: turnoIds },
+        },
+      },
+      include: { turno: { select: { fecha: true } } },
+    });
+
+    if (esperasSuperpuestas.length > 0) {
+      const fechasUnicas = new Map<number, Date>();
+      for (const espera of esperasSuperpuestas) {
+        fechasUnicas.set(espera.turno.fecha.getTime(), espera.turno.fecha);
+      }
+      const diasStr = Array.from(fechasUnicas.values())
+        .sort((a, b) => a.getTime() - b.getTime())
+        .map((f) => this.formatearDiaTurno(f))
+        .join(', ');
+      const horaStr = this.formatearHoraTurno(turnoBase.hora_inicio);
+      const mensaje = flujo === 'paciente'
+        ? `Ya te encuentras anotado en otra lista de espera los siguientes días a las ${horaStr}: ${diasStr}`
+        : `El paciente ya se encuentra anotado en otra lista de espera los siguientes días a las ${horaStr}: ${diasStr}`;
+      throw new BadRequestException(mensaje);
     }
 
     const grupoId = crypto.randomUUID(); 
@@ -416,6 +492,80 @@ async inscribirPaciente(
     return this.inscribirPaciente(turnoId, paciente.id, prioridad);
   }
 
+
+  private async calcularLimiteListaEspera(capacidadTurno: number): Promise<number> {
+    const config = await this.prisma.configuracionSistema.findUnique({ where: { id: 1 } });
+    const porcentaje = config?.porcentajeListaEspera || 20;
+    let limiteLista = Math.floor((capacidadTurno * (porcentaje / 100)) / 2);
+
+    if (limiteLista === 0 && capacidadTurno > 0 && porcentaje > 0) limiteLista = 1;
+
+    return limiteLista;
+  }
+
+  private async estaListaEsperaCompleta(
+    turnoId: number,
+    prioridad: number,
+    capacidad: number,
+  ): Promise<boolean> {
+    const limiteLista = await this.calcularLimiteListaEspera(capacidad);
+    const ocupacionActual = await this.prisma.listaEspera.count({
+      where: { turno_id: turnoId, prioridad, estado: EstadoListaEspera.PENDIENTE },
+    });
+
+    return ocupacionActual >= limiteLista;
+  }
+
+  private formatearDiaTurno(fecha: Date): string {
+    const fechaUtc = new Date(Date.UTC(
+      fecha.getUTCFullYear(),
+      fecha.getUTCMonth(),
+      fecha.getUTCDate(),
+      12,
+      0,
+      0,
+      0,
+    ));
+
+    // es-AR agrega coma tras el weekday ("viernes, 7 de agosto"); los mensajes la quieren sin coma.
+    return new Intl.DateTimeFormat('es-AR', {
+      timeZone: 'UTC',
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    }).format(fechaUtc).replace(',', '');
+  }
+
+  private formatearHoraTurno(horaInicio: Date): string {
+    const horas = horaInicio.getUTCHours().toString().padStart(2, '0');
+    const minutos = horaInicio.getUTCMinutes().toString().padStart(2, '0');
+    return `${horas}:${minutos}hs`;
+  }
+
+  private async obtenerDiasConReservaActiva(
+    pacienteId: number,
+    fechas: Date[],
+    horaInicio: Date,
+  ): Promise<Date[]> {
+    const reservas = await this.prisma.reserva.findMany({
+      where: {
+        paciente_id: pacienteId,
+        estado: { in: [EstadoReserva.PENDIENTE, EstadoReserva.CONFIRMADA] },
+        turno: {
+          fecha: { in: fechas },
+          hora_inicio: horaInicio,
+        },
+      },
+      include: { turno: { select: { fecha: true } } },
+    });
+
+    const fechasUnicas = new Map<number, Date>();
+    for (const reserva of reservas) {
+      fechasUnicas.set(reserva.turno.fecha.getTime(), reserva.turno.fecha);
+    }
+
+    return Array.from(fechasUnicas.values()).sort((a, b) => a.getTime() - b.getTime());
+  }
 
   private validarTurnoNoPasado(turno: { fecha: Date; hora_inicio: Date }) {
     const turnoFechaHora = new Date(Date.UTC(
