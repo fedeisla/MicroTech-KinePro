@@ -8,6 +8,7 @@ import { ConfiguracionService } from '@/configuracion/configuracion.service'
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago'
 import { EstadoListaEspera } from '@prisma/client'
 import { buildTurnoConfirmadoEmailHtml } from '@/mail/turno-confirmado.template'
+import { fechaEnvioRecordatorio24h, formatFechaHoraPared } from '@/common/datetime.util'
 
 @Injectable()
 export class PagosService {
@@ -661,15 +662,7 @@ export class PagosService {
     if (!reserva || !reserva.paciente?.usuario) return
 
     const turno = reserva.turno
-    const fechaTurno = new Date(Date.UTC(
-      turno.fecha.getUTCFullYear(),
-      turno.fecha.getUTCMonth(),
-      turno.fecha.getUTCDate(),
-      turno.hora_inicio.getUTCHours(),
-      turno.hora_inicio.getUTCMinutes(),
-    ))
-    const fechaStr = fechaTurno.toLocaleDateString('es-AR')
-    const horaStr = turno.hora_inicio.getUTCHours().toString().padStart(2, '0') + ':' + turno.hora_inicio.getUTCMinutes().toString().padStart(2, '0')
+    const { fechaStr, horaStr } = formatFechaHoraPared(turno.fecha, turno.hora_inicio)
     const pagoCompletado = reserva.pagos[0]
     const descripcion = `Su turno para la actividad ${turno.tipoActividad.nombre} ha sido confirmado para el día ${fechaStr} a las ${horaStr}hs.`
     const html = buildTurnoConfirmadoEmailHtml({
@@ -697,18 +690,21 @@ export class PagosService {
       html,
     })
 
-    const fechaEnvioRecordatorio = new Date(fechaTurno.getTime() - 24 * 60 * 60 * 1000)
-    const enviarRecordatorioAhora = fechaEnvioRecordatorio.getTime() <= Date.now()
-    await this.notificacionesService.crearNotificacion({
-      pacienteId: reserva.paciente_id,
-      reservaId: reserva.id,
-      titulo: 'Recordatorio de turno',
-      descripcion: `Recordatorio de turno confirmado para la actividad ${turno.tipoActividad.nombre} el día ${fechaStr} a las ${horaStr}hs.`,
-      tipo: 'RECORDATORIO',
-      canal: 'EMAIL',
-      fechaEnvio: enviarRecordatorioAhora ? new Date() : fechaEnvioRecordatorio,
-      enviarEmail: enviarRecordatorioAhora,
-      email: reserva.paciente.usuario.email,
-    })
+    // Solo programar si el instante "24hs antes" todavía no pasó.
+    // Si se reserva/confirma con menos de 24hs de anticipación, no hay recordatorio.
+    const fechaEnvioRecordatorio = fechaEnvioRecordatorio24h(turno.fecha, turno.hora_inicio)
+    if (fechaEnvioRecordatorio.getTime() > Date.now()) {
+      await this.notificacionesService.crearNotificacion({
+        pacienteId: reserva.paciente_id,
+        reservaId: reserva.id,
+        titulo: 'Recordatorio de turno',
+        descripcion: `Recordatorio de turno confirmado para la actividad ${turno.tipoActividad.nombre} el día ${fechaStr} a las ${horaStr}hs.`,
+        tipo: 'RECORDATORIO',
+        canal: 'EMAIL',
+        fechaEnvio: fechaEnvioRecordatorio,
+        enviarEmail: false,
+        email: reserva.paciente.usuario.email,
+      })
+    }
   }
 }

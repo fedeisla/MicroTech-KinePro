@@ -10,6 +10,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ConfiguracionService } from '@/configuracion/configuracion.service';
 import { buildTurnoConfirmadoEmailHtml } from '@/mail/turno-confirmado.template';
+import { fechaEnvioRecordatorio24h, formatFechaHoraPared } from '@/common/datetime.util';
 
 @Injectable()
 export class ReservaService {
@@ -705,10 +706,15 @@ export class ReservaService {
         include: { usuario: true },
       });
       if (paciente && paciente.usuario) {
-        const fechaNueva = new Date(Date.UTC(nuevoTurno.fecha.getUTCFullYear(), nuevoTurno.fecha.getUTCMonth(), nuevoTurno.fecha.getUTCDate(), nuevoTurno.hora_inicio.getUTCHours(), nuevoTurno.hora_inicio.getUTCMinutes()));
-        const fechaEnvioRecordatorio = new Date(fechaNueva.getTime() - 24 * 60 * 60 * 1000);
-        const fechaNuevaStr = fechaNueva.toLocaleDateString('es-AR');
-        const horaNuevaStr = nuevoTurno.hora_inicio.getUTCHours().toString().padStart(2,'0')+':'+nuevoTurno.hora_inicio.getUTCMinutes().toString().padStart(2,'0');
+        const { fechaStr: fechaNuevaStr, horaStr: horaNuevaStr } = formatFechaHoraPared(
+          nuevoTurno.fecha,
+          nuevoTurno.hora_inicio,
+        );
+        const fechaEnvioRecordatorio = fechaEnvioRecordatorio24h(
+          nuevoTurno.fecha,
+          nuevoTurno.hora_inicio,
+        );
+        const actividadNombre = nuevoTurno.tipoActividad?.nombre ?? '';
 
         await this.crearNotificacionReservaReprogramada(
           reservaActual.paciente_id,
@@ -718,23 +724,23 @@ export class ReservaService {
             fecha: nuevoTurno.fecha,
             hora_inicio: nuevoTurno.hora_inicio,
           },
-          nuevoTurno.tipoActividad?.nombre ?? '',
+          actividadNombre,
           paciente.usuario.email,
         );
-        const tituloR = `Recordatorio de turno`;
-        const descripcionR = `Recordatorio de turno confirmado para la actividad el día ${fechaNuevaStr} a las ${horaNuevaStr}hs.`;
-        const enviarRecordatorioAhora = fechaEnvioRecordatorio.getTime() <= Date.now();
-        await this.notificacionesService.crearNotificacion({
-          pacienteId: reservaActual.paciente_id,
-          reservaId,
-          titulo: tituloR,
-          descripcion: descripcionR,
-          tipo: 'RECORDATORIO',
-          canal: 'EMAIL',
-          fechaEnvio: enviarRecordatorioAhora ? new Date() : fechaEnvioRecordatorio,
-          enviarEmail: enviarRecordatorioAhora,
-          email: paciente.usuario.email,
-        });
+        // Solo si aún faltan más de 24hs; si ya pasó ese instante, no hay recordatorio.
+        if (fechaEnvioRecordatorio.getTime() > Date.now()) {
+          await this.notificacionesService.crearNotificacion({
+            pacienteId: reservaActual.paciente_id,
+            reservaId,
+            titulo: 'Recordatorio de turno',
+            descripcion: `Recordatorio de turno confirmado para la actividad ${actividadNombre} el día ${fechaNuevaStr} a las ${horaNuevaStr}hs.`,
+            tipo: 'RECORDATORIO',
+            canal: 'EMAIL',
+            fechaEnvio: fechaEnvioRecordatorio,
+            enviarEmail: false,
+            email: paciente.usuario.email,
+          });
+        }
       }
     } catch (error) {
       if (error instanceof HttpException) throw error;

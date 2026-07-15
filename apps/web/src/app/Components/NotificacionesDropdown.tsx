@@ -43,6 +43,9 @@ export default function NotificacionesDropdown() {
   // Obtener notificaciones al montar para mostrar el contador incluso sin abrir el dropdown
   useEffect(() => {
     fetchNotis();
+    // Refresco periódico: los recordatorios llegan por cron (~1 min) sin recargar la página
+    const id = window.setInterval(fetchNotis, 5_000);
+    return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -163,11 +166,13 @@ export default function NotificacionesDropdown() {
                       </div>
                       
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <h4 className={`text-sm truncate ${notif.leida ? 'font-medium text-slate-700' : 'font-bold text-slate-900'}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <h4 className={`text-sm leading-snug break-words ${notif.leida ? 'font-medium text-slate-700' : 'font-bold text-slate-900'}`}>
                             {notif.titulo}
                           </h4>
-                          <span className="text-[10px] font-semibold text-slate-400 shrink-0 uppercase tracking-wider">{formatearTiempoTranscurrido(notif.tiempo)}</span>
+                          <span className="text-[10px] font-semibold text-slate-400 shrink-0 uppercase tracking-wider pt-0.5 whitespace-nowrap">
+                            {formatearTiempoTranscurrido(notif.tiempo)}
+                          </span>
                         </div>
                         <p className="text-xs text-slate-500 mt-1 leading-normal">
                           {notif.descripcion}
