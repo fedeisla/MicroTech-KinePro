@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { fechasMismoDiaSemana, formatearFechaLocal, parseFechaLocal } from '@/lib/fechas';
 import { toast } from 'sonner';
 import { ArrowLeft, CheckCircle2, AlertCircle, ClipboardList, TicketPercent } from 'lucide-react';
 import { RangoHorarioBackend, Actividad } from '@/types/turno';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
-import { getTurnoById } from '@/services/turnosService';
+import { getHorariosTurnos, getTurnoById } from '@/services/turnosService';
 import { chequearDescuento } from '@/services/reservasService';
 import { listaEsperaService } from '@/services/listaEsperaService';
 import { tituloYMensajeDesdeApi } from '@/app/Components/InfoDialog';
@@ -27,15 +27,25 @@ interface Props {
   setAdminEmail?: (email: string) => void;
 }
 
+function esErrorDeCupo(mensaje: string): boolean {
+  const msg = mensaje.toLowerCase();
+  return (
+    msg.includes('disponibilidad') ||
+    msg.includes('cupo') ||
+    msg.includes('lleno') ||
+    msg.includes('capacidad') ||
+    msg.includes('disponible')
+  );
+}
+
 export default function PanelMensual({
-  mesActual, anioActual, diasSeleccionados, diasLlenos, horariosDelDia, cargandoHorarios,
+  mesActual, anioActual, diasSeleccionados, diasLlenos: _diasLlenos, horariosDelDia, cargandoHorarios,
   rangoSeleccionado, setRangoSeleccionado, actividadSeleccionada, setActividadSeleccionada,
   handleConfirmarReservaFija, adminMode = false, adminEmail = '', setAdminEmail
 }: Props) {
   
-  const [[paso, direccion], setPasoConfig] = useState<[1 | 2, number]>([1, 0]);
+  const [[paso], setPasoConfig] = useState<[1 | 2, number]>([1, 0]);
   const [fechaHasta, setFechaHasta] = useState('');
-  const [prioridadEspera, setPrioridadEspera] = useState<number>(2);
   const [porcentajeDescuento, setPorcentajeDescuento] = useState(0);
   
   const [precioUnitario, setPrecioUnitario] = useState(0);
@@ -43,24 +53,58 @@ export default function PanelMensual({
 
   const [cargando, setCargando] = useState(false);
   const [faltaDisponibilidad, setFaltaDisponibilidad] = useState(false);
+  const [cadenaConTurnoLleno, setCadenaConTurnoLleno] = useState(false);
 
   const { usuario } = useAuth();
 
   const estaLleno = actividadSeleccionada ? actividadSeleccionada.cuposDisponibles <= 0 : false;
 
-  const calcularFechasFijas = () => {
+  const fechasCalculadas = useMemo(() => {
     if (diasSeleccionados.length === 0 || !fechaHasta) return [];
     const primerDia = diasSeleccionados[0];
     const inicio = new Date(anioActual, mesActual, primerDia);
     const fin = parseFechaLocal(fechaHasta);
     return fechasMismoDiaSemana(inicio, fin);
-  };
+  }, [diasSeleccionados, fechaHasta, anioActual, mesActual]);
 
-  const fechasCalculadas = calcularFechasFijas();
-  const hayConflictoDeCupos = fechasCalculadas.some(fecha => diasLlenos.includes(fecha.getDate()));
-  const mostrarPrioridad1 = faltaDisponibilidad || hayConflictoDeCupos;
+  const fechasKey = fechasCalculadas.map((f) => formatearFechaLocal(f)).join(',');
 
-  const handleAgregarAListaEspera = async (prioridad: number = 2) => {
+  // Verifica cupos reales de la actividad/horario en TODA la cadena (no solo el primer día).
+  useEffect(() => {
+    if (!actividadSeleccionada || !rangoSeleccionado || fechasCalculadas.length === 0) {
+      setCadenaConTurnoLleno(false);
+      return;
+    }
+
+    let cancelado = false;
+
+    const verificarCadena = async () => {
+      try {
+        const horariosPorFecha = await Promise.all(
+          fechasCalculadas.map((fecha) => getHorariosTurnos(formatearFechaLocal(fecha))),
+        );
+
+        const algunoLleno = horariosPorFecha.some((horarios) => {
+          const rango = horarios.find((h) => h.desde === rangoSeleccionado.desde);
+          const actividad = rango?.actividades.find((a) => a.nombre === actividadSeleccionada.nombre);
+          return actividad ? actividad.cuposDisponibles <= 0 : false;
+        });
+
+        if (!cancelado) setCadenaConTurnoLleno(algunoLleno);
+      } catch {
+        if (!cancelado) setCadenaConTurnoLleno(false);
+      }
+    };
+
+    verificarCadena();
+    return () => {
+      cancelado = true;
+    };
+  }, [actividadSeleccionada, rangoSeleccionado, fechasKey]);
+
+  const mostrarListaEspera = faltaDisponibilidad || cadenaConTurnoLleno || estaLleno;
+
+  const handleAgregarAListaEspera = async (prioridad: number = 1) => {
     if (!actividadSeleccionada) return;
 
     try {
@@ -74,7 +118,7 @@ export default function PanelMensual({
         await listaEsperaService.inscribirTurnoFijoVirtual(actividadSeleccionada.id, fechasString);
       }
       
-      toast.success(`Solicitud agregada a la lista de espera (Prioridad ${prioridad})`);
+      toast.success(`Te anotaste con éxito en las listas de espera`);
       setFaltaDisponibilidad(false);
     } catch (err: any) {
       const detalle = err.message || 'Error al anotar en la lista de espera';
@@ -91,10 +135,15 @@ export default function PanelMensual({
     try {
       await handleConfirmarReservaFija(fechasCalculadas);
     } catch (err: any) {
-      setFaltaDisponibilidad(true);
-      toast.error('No hay cupo disponible en todas las fechas.', {
-        description: 'Podés anotarte en la lista de espera.'
-      });
+      const mensaje = err?.message || '';
+      if (esErrorDeCupo(mensaje)) {
+        setFaltaDisponibilidad(true);
+        toast.error('No hay cupo disponible en todas las fechas.', {
+          description: 'Podés anotarte en la lista de espera.'
+        });
+      } else {
+        toast.error(mensaje || 'No se pudo crear la reserva');
+      }
     } finally {
       setCargando(false);
     }
@@ -196,14 +245,6 @@ export default function PanelMensual({
             <motion.div key="paso2" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 flex flex-col absolute inset-0 overflow-y-auto">
               <button onClick={handleVolver} className="text-sm text-slate-500 mb-4 flex items-center gap-1 hover:text-slate-800"><ArrowLeft className="w-4 h-4" /> Volver</button>
               
-              {/* Ocultamos el cartel de turno sin cupo "base" si ya estamos mostrando el de Prioridad 1 general */}
-              {estaLleno && !mostrarPrioridad1 && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
-                  <p className="text-amber-800 font-bold text-sm mb-2 flex items-center gap-2"><AlertCircle className="w-4 h-4" /> ¡Turno sin cupos!</p>
-                  <p className="text-xs text-amber-700 mb-3">Estás seleccionando un horario completo. ¿Deseas unirte a la lista de espera?</p>
-                </div>
-              )}
-
               {precioUnitario > 0 && fechasCalculadas.length > 0 ? (() => {
                 const formatear = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 const subtotal = precioUnitario * fechasCalculadas.length;
@@ -253,8 +294,8 @@ export default function PanelMensual({
                 <input type="date" disabled value={fechaHasta} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-600 cursor-not-allowed" />
               </div>
               
-              {/* BLOQUE DE PRIORIDAD 1: Aparece inmediatamente si un día de la cadena está lleno */}
-              {mostrarPrioridad1 && (
+              {/* Aparece si al menos un turno de la cadena está lleno */}
+              {mostrarListaEspera && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
                   <p className="text-amber-800 font-bold text-sm mb-2 flex items-center gap-2">
                     <AlertCircle className="w-4 h-4" /> Conflictos de disponibilidad
@@ -271,19 +312,15 @@ export default function PanelMensual({
                 </div>
               )}
 
-              {/* Si hay lugares disponibles, muestra los botones de reserva normal */}
-              {!mostrarPrioridad1 && (
+              {/* Si hay lugares disponibles en toda la cadena, muestra reserva normal */}
+              {!mostrarListaEspera && (
                 <button 
                   disabled={cargando}
-                  onClick={estaLleno ? () => handleAgregarAListaEspera(2) : ejecutarReservaFija}
-                  className={`w-full py-3 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 ${estaLleno ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-teal-600 text-white hover:bg-teal-700'}`}
+                  onClick={ejecutarReservaFija}
+                  className="w-full py-3 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 bg-teal-600 text-white hover:bg-teal-700"
                 >
                   {cargando ? 'Procesando...' : (
-                    estaLleno ? (
-                        <><AlertCircle className="w-4 h-4" /> Agregar a la lista de espera</>
-                    ) : (
-                        <><CheckCircle2 className="w-4 h-4" /> Confirmar reserva</>
-                    )
+                    <><CheckCircle2 className="w-4 h-4" /> Confirmar reserva</>
                   )}
                 </button>
               )}

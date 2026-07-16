@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent, EventEmitter2 } from '@nestjs/event-emitter';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { EstadoListaEspera } from '@prisma/client';
 import { NotificacionesService } from '@/notificaciones/notificaciones.service';
 import { TipoNotificacion } from '@prisma/client';
+import { formatFechaHoraPared } from '../common/datetime.util';
 
 @Injectable()
 export class MotorMatchService {
@@ -52,7 +53,8 @@ export class MotorMatchService {
   private async procesarAsignacionBloque(grupoId: string, config: any) {
     const bloque = await this.prisma.listaEspera.findMany({ 
       where: { grupo_fijo_id: grupoId, estado: EstadoListaEspera.PENDIENTE },
-      include: { turno: true } 
+      include: { turno: true },
+      orderBy: { turno: { fecha: 'asc' } },
     });
 
     // Validamos que TODOS los turnos del bloque sigan teniendo cupo disponible
@@ -73,6 +75,11 @@ export class MotorMatchService {
         });
       });
       this.logger.log(`Bloque fijo ${grupoId} asignado correctamente.`);
+
+      const horasLimite = config.horasExpiracionEspera ?? 12;
+      for (const item of bloque) {
+        await this.notificarOfertaTurno(item.id, horasLimite);
+      }
     } else {
       this.logger.warn(`Bloque ${grupoId} no asignado: algunos turnos se llenaron.`);
     }
@@ -95,6 +102,42 @@ export class MotorMatchService {
       });
     });
     this.logger.log(`Turno individual asignado a paciente ${candidato.paciente_id}.`);
+
+    const horasLimite = config.horasExpiracionEspera ?? 12;
+    await this.notificarOfertaTurno(candidato.id, horasLimite);
+  }
+
+  private async notificarOfertaTurno(listaEsperaId: number, horasLimite: number) {
+    try {
+      const item = await this.prisma.listaEspera.findUnique({
+        where: { id: listaEsperaId },
+        include: {
+          paciente: { include: { usuario: true } },
+          turno: { include: { tipoActividad: true } },
+        },
+      });
+
+      const emailPaciente = item?.paciente?.usuario?.email;
+      if (!item || !emailPaciente) return;
+
+      const { fechaStr, horaStr } = formatFechaHoraPared(item.turno.fecha, item.turno.hora_inicio);
+      const titulo = 'Turno disponible en lista de espera';
+      const descripcion = `Existe un turno disponible para la actividad ${item.turno.tipoActividad.nombre} del día ${fechaStr} a las ${horaStr}hs. Desde este momento contas con ${horasLimite} horas para aceptar o rechazar el turno.`;
+
+      await this.notificacionesService.crearNotificacion({
+        pacienteId: item.paciente_id,
+        titulo,
+        descripcion,
+        tipo: TipoNotificacion.INFORMATIVA,
+        canal: 'EMAIL',
+        enviarEmail: true,
+        email: emailPaciente,
+      });
+
+      this.logger.log(`Oferta de turno notificada a ${emailPaciente} (paciente ID ${item.paciente_id})`);
+    } catch (emailError) {
+      this.logger.error(`Error al notificar oferta de turno (listaEspera ${listaEsperaId}): ${String(emailError)}`);
+    }
   }
 
   private async buscarSiguiente(turnoId: number, prioridad: number) {
@@ -104,8 +147,8 @@ export class MotorMatchService {
     });
   }
 
-  // para test CronExpression.EVERY_10_SECONDS
-  @Cron(CronExpression.EVERY_10_SECONDS) // en produccion CronExpression.EVERY_5_MINUTES
+  // para test */2 * * * * * (cada 2s); en produccion CronExpression.EVERY_5_MINUTES
+  @Cron('*/2 * * * * *')
   async limpiarExpirados() {
     const config = await this.prisma.configuracionSistema.findUnique({ where: { id: 1 } });
     const horasLimite = config ? config.horasExpiracionEspera : 12;
@@ -115,7 +158,7 @@ export class MotorMatchService {
     const expirados = await this.prisma.listaEspera.findMany({
       where: {
         estado: EstadoListaEspera.NOTIFICADO,
-        fecha_notificacion: { lt: haceXHoras }
+        fecha_notificacion: { lte: haceXHoras }
       },
       include: {
         paciente: {
@@ -138,28 +181,25 @@ export class MotorMatchService {
 
       // 3. Flujo de Notificación por Email (Protegido con try/catch para que no trabe el motor)
       try {
-        if (expirado.paciente?.usuario?.email) {
+        const emailPaciente = expirado.paciente?.usuario?.email;
+        if (emailPaciente) {
           const turno = expirado.turno;
-          
-        
-          const fechaTurno = new Date(Date.UTC(turno.fecha.getUTCFullYear(), turno.fecha.getUTCMonth(), turno.fecha.getUTCDate(), turno.hora_inicio.getUTCHours(), turno.hora_inicio.getUTCMinutes()));
-          const fechaStr = fechaTurno.toLocaleDateString('es-AR');
-          const horaStr = turno.hora_inicio.getUTCHours().toString().padStart(2, '0') + ':' + turno.hora_inicio.getUTCMinutes().toString().padStart(2, '0');
+          const { fechaStr, horaStr } = formatFechaHoraPared(turno.fecha, turno.hora_inicio);
 
           const titulo = `Cupo de lista de espera expirado`;
-          const descripcion = `Se ha excedido el tiempo límite de ${horasLimite} horas para confirmar su turno de ${turno.tipoActividad.nombre} el día ${fechaStr} a las ${horaStr}hs. El turno ha sido rechazado automáticamente.`;
+          const descripcion = `Se ha excedido el tiempo límite de ${horasLimite} horas para confirmar su turno de la actividad ${turno.tipoActividad.nombre} el día ${fechaStr} a las ${horaStr}hs. El turno ha sido rechazado automáticamente.`;
 
           await this.notificacionesService.crearNotificacion({
             pacienteId: expirado.paciente_id,
             titulo,
             descripcion,
-            tipo: TipoNotificacion.CANCELACION_TURNO, 
+            tipo: TipoNotificacion.CANCELACION_TURNO,
             canal: 'EMAIL',
             enviarEmail: true,
-            email: "pablocabe27@gmail.com",
+            email: emailPaciente,
           });
-          
-          this.logger.log(`Email de expiración enviado correctamente al paciente ID ${expirado.paciente_id}`);
+
+          this.logger.log(`Email de expiración enviado correctamente a ${emailPaciente} (paciente ID ${expirado.paciente_id})`);
         }
       } catch (emailError) {
         this.logger.error(`Error al enviar notificación de expiración al paciente ${expirado.paciente_id}: ${String(emailError)}`);

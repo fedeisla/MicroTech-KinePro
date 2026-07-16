@@ -376,7 +376,7 @@ useEffect(() => {
 
     const intervaloEspera = setInterval(() => {
       cargarEstadosEspera();
-    }, 10000);
+    }, 2000);
 
     return () => clearInterval(intervaloEspera);
   }, []);
@@ -500,33 +500,21 @@ useEffect(() => {
   const handleConfirmarReservaFija = async (fechasMensuales: Date[]) => {
     if (!actividadSeleccionada || fechasMensuales.length === 0) return;
 
-    // ─── Rama ADMIN (presencial) — sin cambios ──────────────────────────
+    // ─── Rama ADMIN (presencial) ────────────────────────────────────────
     if (esAdmin) {
-      try {
-        if (!adminEmail) throw new Error('Ingrese el email del paciente');
-        const respuesta = await crearReservaFijaPresencial(adminEmail, actividadSeleccionada.id, fechasMensuales);
-        toast.success(respuesta.message, { duration: 5000 });
-        resetSeleccion();
-        setModalidad('UNICO');
-      } catch (error: any) {
-        toast.error('No pudimos registrar tu reserva fija', {
-          description: error.message || 'Ocurrió un problema. Intentá de nuevo.',
-        });
-      }
+      if (!adminEmail) throw new Error('Ingrese el email del paciente');
+      const respuesta = await crearReservaFijaPresencial(adminEmail, actividadSeleccionada.id, fechasMensuales);
+      toast.success(respuesta.message, { duration: 5000 });
+      resetSeleccion();
+      setModalidad('UNICO');
       return;
     }
 
     // ─── Rama PACIENTE (con MercadoPago) ────────────────────────────────
 
     // FASE 1: crear las reservas en estado PENDIENTE
-    let respuesta;
-    try {
-      toast.info('Procesando reserva…', { duration: 2000 });
-      respuesta = await crearReservaFija(actividadSeleccionada.id, fechasMensuales);
-    } catch (reservaError: any) {
-      toast.error(reservaError.message || 'No se pudo crear la reserva', { duration: 5000 });
-      return;
-    }
+    toast.info('Procesando reserva…', { duration: 2000 });
+    const respuesta = await crearReservaFija(actividadSeleccionada.id, fechasMensuales);
 
     const reservaIds: number[] = respuesta.reservaIds ?? [];
     if (reservaIds.length === 0) {

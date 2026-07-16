@@ -365,7 +365,7 @@ export default function TabInscriptos({ detalle, fecha, esAdmin, estaLleno = fal
             <div className="mt-4">
               {tipoReserva === 'unico' ? (
                 <button disabled={loading} onClick={handleReservarPorEmail} className="w-full px-3 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700 transition-colors">
-                  Anotar Paciente
+                  Anotar paciente
                 </button>
               ) : (
                 <button disabled={loading} onClick={handleReservarFijosPorEmail} className="w-full px-3 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700 transition-colors">
