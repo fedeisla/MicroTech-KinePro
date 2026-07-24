@@ -13,7 +13,7 @@ import { registrarPago } from '@/services/pagosService'
 import { obtenerPacientes } from '@/services/usuariosService'
 import { listaEsperaService } from '@/services/listaEsperaService'
 import ReprogramarReservaModal from '@/components/turnos/ReprogramarReservaModal'
-import InfoDialog, { tituloYMensajeDesdeApi } from '@/app/Components/InfoDialog'
+import InfoDialog, { tituloYMensajeDesdeApi } from '@/components/InfoDialog'
 import type { TurnoDetalle } from '@/types/turno'
 
 interface TabInscriptosProps {

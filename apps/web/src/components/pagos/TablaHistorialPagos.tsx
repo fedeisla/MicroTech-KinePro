@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, AlertCircle, Filter } from 'lucide-react'
-import TablaGenerica, { Columna } from '@/app/Components/TablaGenerica'
+import TablaGenerica, { Columna } from '@/components/TablaGenerica'
 import FiltrarPacienteModal from '@/components/pagos/FiltrarPacienteModal'
 import { obtenerHistorialPagos } from '@/services/pagosService'
 import type { PagoHistorial, EstadoPago } from '@/types/pago'

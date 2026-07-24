@@ -10,7 +10,7 @@ import TabEspera from './TabEspera'
 import { toast } from 'sonner' // o la librería que uses
 
 import { fechasMismoDiaSemana, parseFechaLocal } from '@/lib/fechas'
-import { tituloYMensajeDesdeApi } from '@/app/Components/InfoDialog'
+import { tituloYMensajeDesdeApi } from '@/components/InfoDialog'
 import { obtenerPacientes } from '@/services/usuariosService'
 import { cancelarReservaPresencial, chequearDescuento, crearReservaFijaPresencial, crearReservaPresencial } from '@/services/reservasService'
 import { registrarPago } from '@/services/pagosService'

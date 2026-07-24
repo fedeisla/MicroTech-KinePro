@@ -3,11 +3,11 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Pencil, Trash2, Plus, Loader2, AlertCircle } from 'lucide-react'
-import TablaGenerica, { Columna } from '@/app/Components/TablaGenerica'
+import TablaGenerica, { Columna } from '@/components/TablaGenerica'
 import ActividadModal from './ActividadModal'
 import { getActividades, eliminarActividad } from '@/services/actividadesService'
 import type { Actividad } from '@/types/actividad'
-import ConfirmDialog from '@/app/Components/ConfirmDialog'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 export default function TablaActividades() {
   const [actividades, setActividades] = useState<Actividad[]>([])

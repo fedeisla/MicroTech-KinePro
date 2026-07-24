@@ -1,7 +1,7 @@
 // app/layout.tsx
 import './globals.css';
-import Sidebar from './Components/Sidebar';
-import Header from './Components/Header'; 
+import Sidebar from '../components/Sidebar';
+import Header from '../components/Header'; 
 import { Toaster } from 'sonner'; // 👈 1. Importás el Toaster
 
 export default function RootLayout({

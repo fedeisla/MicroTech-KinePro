@@ -1,7 +1,7 @@
 'use client';
 
 // src/app/page.tsx
-import Inicio from './Components/Inicio'; 
+import Inicio from '../components/Inicio'; 
 import ReservaTurnos from './reservas/ReservaTurnos';
 import ProximosTurnosHome from '@/components/turnos/ProximosTurnosHome';
 import Ubicacion from '@/components/home/Ubicacion';

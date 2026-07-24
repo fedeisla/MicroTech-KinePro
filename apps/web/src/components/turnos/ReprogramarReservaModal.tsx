@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import InfoDialog, { tituloYMensajeDesdeApi, type InfoDialogVariante } from '@/app/Components/InfoDialog'
+import InfoDialog, { tituloYMensajeDesdeApi, type InfoDialogVariante } from '@/components/InfoDialog'
 import { apiFetch } from '@/lib/api'
 import { reprogramarReserva, reprogramarReservaPresencial } from '@/services/reservasService'
 

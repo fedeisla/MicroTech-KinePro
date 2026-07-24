@@ -8,7 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { getHorariosTurnos, getTurnoById } from '@/services/turnosService';
 import { chequearDescuento } from '@/services/reservasService';
 import { listaEsperaService } from '@/services/listaEsperaService';
-import { tituloYMensajeDesdeApi } from '@/app/Components/InfoDialog';
+import { tituloYMensajeDesdeApi } from '@/components/InfoDialog';
 
 interface Props {
   mesActual: number;

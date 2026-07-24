@@ -1,36 +1,6 @@
 version: '3.8'
 
 services:
-  api-kinepro:
-    container_name: kinepro_backend
-    build:
-      context: . # ¡Importante! El contexto es la raíz del monorepo
-      dockerfile: apps/api/Dockerfile
-    ports:
-      - "4000:4000"
-    environment:
-      - NODE_ENV=production
-      # Mismas credenciales que la DB
-      - DATABASE_URL=postgresql://valentinaNegra:valentinaNegra@db:5432/kinepro_db
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-
-  web-kinepro:
-    container_name: kinepro_frontend
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=http://localhost:4000/api
-    restart: unless-stopped
-    depends_on:
-      - api-kinepro
-
   db:
     image: postgres:16-alpine
     container_name: kinepro_db
@@ -44,7 +14,6 @@ services:
     volumes:
       - kinepro_pg_data:/var/lib/postgresql/data
     healthcheck:
-      # Modificado para usar valentinaNegra
       test: ["CMD-SHELL", "pg_isready -U valentinaNegra -d kinepro_db"]
       interval: 5s
       timeout: 5s

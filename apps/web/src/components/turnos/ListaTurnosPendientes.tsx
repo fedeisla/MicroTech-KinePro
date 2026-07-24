@@ -6,7 +6,7 @@ import { useMemo, useState } from 'react'
 import type { TurnoPacientePendiente } from '@/types/turnoPaciente'
 import { cancelarReserva } from '@/services/reservasService'
 import ReprogramarReservaModal from '@/components/turnos/ReprogramarReservaModal'
-import InfoDialog, { tituloYMensajeDesdeApi } from '@/app/Components/InfoDialog'
+import InfoDialog, { tituloYMensajeDesdeApi } from '@/components/InfoDialog'
 
 function formatFecha(fecha: string): string {
   const [year, month, day] = fecha.split('-')
