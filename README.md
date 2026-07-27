@@ -95,3 +95,32 @@ EstructuraMicroTech-KinePro/
 ├── package.json                 # Workspaces + scripts globales
 └── README.md
 ```
+---
+
+## Equipo de trabajo
+
+
+* **Nombre Apellido** — *Backend & Arquitectura* — [GitHub](---
+
+## Equipo de Desarrollo
+
+Este proyecto fue creado por el equipo **MicroTech**:
+
+* **Nombre Apellido** — *Backend & Arquitectura* — [GitHub](---
+
+---
+
+## Equipo de Desarrollo
+
+
+<a href="https://github.com/nicolascarrica" target="_blank"><img src="https://github.com/nicolascarrica.png" width="40" height="40" style="border-radius: 50%; vertical-align: middle; margin-right: 8px;" alt="nicolascarrica" /></a>
+<a href="https://github.com/pablocabe" target="_blank"><img src="https://github.com/pablocabe.png" width="40" height="40" style="border-radius: 50%; vertical-align: middle; margin-right: 8px;" alt="pablocabe" /></a>
+<a href="https://github.com/ValeBlanco" target="_blank"><img src="https://github.com/ValeBlanco.png" width="40" height="40" style="border-radius: 50%; vertical-align: middle; margin-right: 8px;" alt="ValeBlanco" /></a>
+<a href="https://github.com/IvanScopel" target="_blank"><img src="https://github.com/IvanScopel.png" width="40" height="40" style="border-radius: 50%; vertical-align: middle; margin-right: 8px;" alt="IvanScopel" /></a>
+
+  
+
+
+
+
+
