@@ -2,6 +2,43 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTurnoDto } from './turnos.dto';
 
+function dateTimePartsInTimeZone(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  const map = new Map(parts.map((p) => [p.type, p.value]));
+  const year = Number(map.get('year'));
+  const month = Number(map.get('month'));
+  const day = Number(map.get('day'));
+  const hour = Number(map.get('hour'));
+  const minute = Number(map.get('minute'));
+
+  if (![year, month, day, hour, minute].every(Number.isFinite)) {
+    throw new Error(`No se pudieron obtener partes de fecha/hora para TZ=${timeZone}`);
+  }
+
+  return { year, month, day, hour, minute };
+}
+
+function parseFechaYYYYMMDD(fecha: string) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fecha);
+  if (!m) throw new BadRequestException('La fecha debe estar en formato YYYY-MM-DD');
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (![year, month, day].every(Number.isFinite)) {
+    throw new BadRequestException('La fecha debe ser válida');
+  }
+  return { year, month, day };
+}
+
 @Injectable()
 export class TurnosService {
   constructor(private prisma: PrismaService) {}
@@ -15,13 +52,36 @@ export class TurnosService {
       throw new NotFoundException('La actividad no existe');
     }
 
-    // Parsear fecha y hora a Date
-    // Importante: usamos UTC para evitar corrimientos por zona horaria.
-    const fechaDate = new Date(`${dto.fecha}T00:00:00.000Z`);
-    const horaInicioDate = new Date(`1970-01-01T${dto.hora_inicio}:00.000Z`);
+    // Persistimos `fecha` (@db.Date) y `hora_inicio` (@db.Time) como "valores de pared" (sin TZ).
+    // Usar Date.UTC evita corrimientos cuando Prisma serializa a ISO (UTC) y la DB es DATE/TIME.
+    const { year, month, day } = parseFechaYYYYMMDD(dto.fecha);
+    const fechaDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    const [horaIngresada, minutosIngresados] = dto.hora_inicio.split(':').map(Number);
+    const horaInicioDate = new Date(Date.UTC(1970, 0, 1, horaIngresada, minutosIngresados, 0, 0));
+
+    // Validar "hoy" en Buenos Aires, independientemente de la TZ del servidor
+    const timeZone = 'America/Argentina/Buenos_Aires';
+    const ahoraBA = dateTimePartsInTimeZone(new Date(), timeZone);
+    const hoyUTC = new Date(Date.UTC(ahoraBA.year, ahoraBA.month - 1, ahoraBA.day, 0, 0, 0, 0));
+
+    if (fechaDate < hoyUTC) {
+      throw new BadRequestException('La fecha del turno no puede ser anterior al día actual');
+    }
+
+    // Escenario 6: si la fecha es hoy (BA), validar que el horario sea posterior al actual (BA)
+    if (fechaDate.getTime() === hoyUTC.getTime()) {
+      const horaActualMinutos = ahoraBA.hour * 60 + ahoraBA.minute;
+      const horaIngresadaMinutos = horaIngresada * 60 + minutosIngresados;
+      
+      if (horaIngresadaMinutos <= horaActualMinutos) {
+        throw new BadRequestException('La fecha y horario del turno no puede ser anterior al día y horario actual');
+      }
+    }
+
 
     // Escenario 4: validar rango semanal (lunes a viernes).
-    // getUTCDay(): 0 = domingo, 1 = lunes, ..., 6 = sábado.
+    // getUTCDay() usa el día de la semana en UTC, que coincide con la fecha YYYY-MM-DD que almacenamos.
+    // 0 = domingo, 1 = lunes, ..., 6 = sábado.
     const diaSemana = fechaDate.getUTCDay();
     if (diaSemana === 0 || diaSemana === 6) {
       throw new BadRequestException('El día se encuentra fuera del rango semanal');
@@ -37,29 +97,20 @@ export class TurnosService {
       throw new BadRequestException('El horario se encuentra fuera del rango horario');
     }
 
-    // Escenarios 2 y 5: verificar si ya existe un turno en ese slot.
-    // (fecha, hora_inicio) es @@unique en el schema.
+    // Verificar que no exista YA la misma actividad en ese día y horario
+    // (la combinación (fecha, hora_inicio, tipoActividad_id) es unique en el schema).
     const turnoExistente = await this.prisma.turno.findUnique({
       where: {
-        fecha_hora_inicio: {
+        fecha_hora_inicio_tipoActividad_id: {
           fecha: fechaDate,
           hora_inicio: horaInicioDate,
+          tipoActividad_id: dto.tipoActividad_id,
         },
       },
     });
 
     if (turnoExistente) {
-      if (turnoExistente.tipoActividad_id === dto.tipoActividad_id) {
-        // Escenario 2: misma actividad en mismo slot
-        throw new BadRequestException(
-          'La actividad ya existe en el día y horario seleccionado',
-        );
-      } else {
-        // Escenario 5: otra actividad ocupando el slot
-        throw new BadRequestException(
-          'El día y horario se encuentra ocupado por otra actividad',
-        );
-      }
+      throw new BadRequestException('La actividad ya existe en el día y horario seleccionado');
     }
 
     // Escenario 1: crear el turno
@@ -83,7 +134,7 @@ export class TurnosService {
   // Cubre Escenarios 1 y 2: devuelve la lista de turnos de la fecha
   // (array vacío si no hay; el front muestra el mensaje correspondiente).
   async listarPorFecha(fechaStr: string) {
-    const fecha = new Date(`${fechaStr}T00:00:00.000Z`);
+    const fecha = new Date(`${fechaStr}T00:00:00`);
 
     const turnos = await this.prisma.turno.findMany({
       where: { fecha },
@@ -95,6 +146,7 @@ export class TurnosService {
       id: t.id,
       fecha: t.fecha,
       hora_inicio: t.hora_inicio,
+      tipoActividad_id: t.tipoActividad_id,
       actividad: t.tipoActividad.nombre,
       capacidad: t.capacidad,
       cantidad_inscriptos: t.cantidad_inscriptos,
@@ -107,22 +159,144 @@ export class TurnosService {
   async obtenerDetalle(id: number) {
     const turno = await this.prisma.turno.findUnique({
       where: { id },
-      include: { tipoActividad: true },
+      include: {
+        tipoActividad: true,
+        reservas: {
+          where: { estado: { not: 'CANCELADA' } },
+          include: {
+            paciente: {
+              include: {
+                usuario: { select: { nombre: true, apellido: true, email: true, dni: true } },
+              },
+            },
+            pagos: { where: { estado: 'COMPLETADO' }, select: { id: true } },
+          },
+        },
+      },
     });
 
     if (!turno) {
       throw new NotFoundException('El turno no existe');
     }
 
+    // Normalizar la fecha a YYYY-MM-DD
+    const y = turno.fecha.getUTCFullYear();
+    const m = String(turno.fecha.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(turno.fecha.getUTCDate()).padStart(2, '0');
+    const fechaStr = `${y}-${m}-${d}`;
+
     return {
       id: turno.id,
-      fecha: turno.fecha,
+      fecha: fechaStr,
       hora_inicio: turno.hora_inicio,
+      tipoActividad_id: turno.tipoActividad_id,
       actividad: turno.tipoActividad.nombre,
+      precio: Number(turno.tipoActividad.precio),
       cantidad_reservas: turno.cantidad_inscriptos,
       espacios_libres: turno.capacidad - turno.cantidad_inscriptos,
       capacidad: turno.capacidad,
       estado: turno.estado,
+      inscriptos: turno.reservas.map((r) => ({
+        id: r.id,
+        nombre: r.paciente.usuario.nombre,
+        apellido: r.paciente.usuario.apellido,
+        email: r.paciente.usuario.email,
+        dni: r.paciente.usuario.dni,
+        estado: r.estado,
+        pagado: r.pagos.length > 0,
+      })),
     };
   }
+
+  async obtenerResumenReservasMes(mes: number, anio: number) {
+    const primerDia = new Date(Date.UTC(anio, mes - 1, 1));
+    const primerDiaSiguienteMes = new Date(Date.UTC(anio, mes, 1));
+
+    const turnos = await this.prisma.turno.findMany({
+      where: {
+        fecha: { gte: primerDia, lt: primerDiaSiguienteMes },
+        cantidad_inscriptos: { gt: 0 },
+      },
+      include: {
+        tipoActividad: true,
+        reservas: {
+          where: { estado: { not: 'CANCELADA' } },
+          include: {
+            pagos: { where: { estado: 'COMPLETADO' }, select: { id: true } },
+          },
+        },
+      },
+      orderBy: [{ fecha: 'asc' }, { hora_inicio: 'asc' }],
+    });
+
+    return turnos.map((t) => {
+      const y = t.fecha.getUTCFullYear();
+      const m = String(t.fecha.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(t.fecha.getUTCDate()).padStart(2, '0');
+      const h = String(t.hora_inicio.getUTCHours()).padStart(2, '0');
+      const min = String(t.hora_inicio.getUTCMinutes()).padStart(2, '0');
+
+      return {
+        id: t.id,
+        date: `${y}-${m}-${d}`,
+        actividad: t.tipoActividad.nombre,
+        hora_inicio: `${h}:${min}`,
+        total_reservas: t.reservas.length,
+        pagados: t.reservas.filter((r) => r.pagos.length > 0).length,
+      };
+    });
+  }
+
+  // Fijate que ahora devuelve un objeto con los dos arrays
+async obtenerDiasDeTurnosDisponilbles(mes: number, anio: number): Promise<{ diasConCupo: number[], diasLlenos: number[] }> {
+  
+  const primerDia = new Date(Date.UTC(anio, mes - 1, 1));
+  const primerDiaSiguienteMes = new Date(Date.UTC(anio, mes, 1));
+
+  const turnosDelMes = await this.prisma.turno.findMany({
+    where: {
+      fecha: {
+        gte: primerDia,
+        lt: primerDiaSiguienteMes,
+      },
+    },
+    select: {
+      fecha: true,
+      capacidad: true,
+      cantidad_inscriptos: true,
+    },
+  });
+
+  // Usamos Sets para asegurarnos de que no haya días duplicados
+  const diasConCupoSet = new Set<number>();
+  const diasLlenosSet = new Set<number>();
+
+  // 1. Agrupamos los turnos por día
+  const turnosPorDia = new Map<number, any[]>();
+  for (const turno of turnosDelMes) {
+    const dia = turno.fecha.getUTCDate();
+    if (!turnosPorDia.has(dia)) {
+      turnosPorDia.set(dia, []);
+    }
+    turnosPorDia.get(dia)!.push(turno);
+  }
+
+  // 2. Evaluamos cada día para ver si le queda al menos un lugar
+  for (const [dia, turnos] of turnosPorDia.entries()) {
+    // Si AL MENOS UN turno de este día tiene lugar, el día tiene cupo
+    const tieneLugar = turnos.some(t => t.capacidad > t.cantidad_inscriptos);
+    
+    if (tieneLugar) {
+      diasConCupoSet.add(dia);
+    } else {
+      diasLlenosSet.add(dia);
+    }
+  }
+
+  // 3. Convertimos los Sets a Arrays y los ordenamos
+  return {
+    diasConCupo: Array.from(diasConCupoSet).sort((a, b) => a - b),
+    diasLlenos: Array.from(diasLlenosSet).sort((a, b) => a - b),
+  };
+}
 }

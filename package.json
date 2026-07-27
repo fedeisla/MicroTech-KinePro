@@ -14,5 +14,18 @@
     "build:api": "npm --workspace apps/api run build",
     "build:web": "npm --workspace apps/web run build",
     "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@nestjs/jwt": "^11.0.2",
+    "framer-motion": "^12.40.0",
+    "lucide-react": "^1.16.0",
+    "next": "^16.2.6",
+    "passport-jwt": "^4.0.1",
+    "sonner": "^2.0.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "@types/nodemailer": "^8.0.0",
+    "@types/passport-jwt": "^4.0.1"
   }
 }

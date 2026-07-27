@@ -31,3 +31,6 @@ Thumbs.db
 
 # typescript incremental compilation cache
 *.tsbuildinfo
+
+# Seed local (no se commitea)
+apps/api/prisma/seed.ts

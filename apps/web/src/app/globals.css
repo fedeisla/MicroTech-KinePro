@@ -2,4 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body { background: #F1F1F1; color: #1A1A1A; }
+:root {
+  /* 1. Colores de la Marca */
+  --kine-blue: #005C9C;
+  --pro-green: #4AA54D;
+
+  /* 2. Variaciones de Tonalidad */
+  --kine-blue-light: #99D5F2;
+  --kine-blue-deep: #002D4C;
+  --pro-green-light: #A1DFA0;
+  --pro-green-deep: #1B7C1E;
+
+  /* 3. Colores de Acento */
+  --teal-accent: #29B6B6;
+
+  /* 4. Colores Neutros y de Texto */
+  --pure-white: #FFFFFF;
+  --neutral-gray: #757575;
+  --light-bg-gray: #F1F1F1;
+  --text-main: #1A1A1A;   
+}
+
+/* Reglas globales unificadas usando las variables */
+html, body {
+  background-color: var(--light-bg-gray);
+  color: var(--text-main);
+  scroll-behavior: smooth;
+}
+
