@@ -97,20 +97,10 @@ EstructuraMicroTech-KinePro/
 ```
 ---
 
-## Equipo de trabajo
-
-
-* **Nombre Apellido** — *Backend & Arquitectura* — [GitHub](---
-
-## Equipo de Desarrollo
-
-Este proyecto fue creado por el equipo **MicroTech**:
-
-* **Nombre Apellido** — *Backend & Arquitectura* — [GitHub](---
 
 ---
 
-## Equipo de Desarrollo
+## Equipo de Trabajo
 
 
 <a href="https://github.com/nicolascarrica" target="_blank"><img src="https://github.com/nicolascarrica.png" width="40" height="40" style="border-radius: 50%; vertical-align: middle; margin-right: 8px;" alt="nicolascarrica" /></a>
