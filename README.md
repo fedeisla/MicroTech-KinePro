@@ -1,130 +1,97 @@
-# MicroTech — KinePro
+# KinePro — Sistema Integral de Gestión Kinesiológica
 
-Scaffolding inicial para el proyecto **KinePro** (gestión de turnos del
-centro kinesiológico KinePro) — equipo **MicroTech**, Ingeniería de
-Software II, UNLP 2026.
+![NestJS](https://img.shields.io/badge/nestjs-%23E0234E.svg?style=for-the-badge&logo=nestjs&logoColor=white)
+![Next JS](https://img.shields.io/badge/Next-black?style=for-the-badge&logo=next.js&logoColor=white)
+![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white)
+![Prisma](https://img.shields.io/badge/Prisma-3982CE?style=for-the-badge&logo=Prisma&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/postgresql-%23316192.svg?style=for-the-badge&logo=postgresql&logoColor=white)
+![TailwindCSS](https://img.shields.io/badge/tailwindcss-%2338B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white)
+![Scrum](https://img.shields.io/badge/agile-SCRUM-0052CC?style=for-the-badge&logo=jira&logoColor=white)
 
-> Este repo es **sólo el punto de partida**: una API NestJS vacía y un
-> Next.js vacío conectados entre sí, sin lógica de negocio ni base de
-> datos. La idea es que el equipo decida qué stack de persistencia y
-> qué módulos sumar a medida que se implementan las HU.
+> **KinePro** es una solución web full-stack desarrollada para la centralización, administración y reserva de turnos de centros de kinesiología y rehabilitación física. El sistema automatiza agendas complejas, manejo de cupos en tiempo real, listas de espera inteligentes y pasarelas de pago.
 
-## Stack
+---
 
-| Capa | Tecnología |
-|------|------------|
-| Backend | NestJS 10 + TypeScript |
-| Frontend | Next.js 14 (App Router) + TailwindCSS |
-| Tests | Jest |
+## Contexto y Metodología del Proyecto
 
-Monorepo con npm workspaces (`apps/api` + `apps/web`).
+Este sistema fue diseñado y desarrollado en equipo bajo los criterios de calidad de la cátedra de **Ingeniería de Software II** (Universidad Nacional de La Plata), implementando **Metodología Ágil Scrum** durante todo el ciclo de vida del software.
 
-## Requisitos
+* **Gestión en Taiga:** Planificación iterativa dividida en *Sprints*, administración del *Product Backlog*, mapeo de *Épicas* y trazabilidad de Historias de Usuario (HU).
+* **Calidad y Criterios de Aceptación:** Implementación estricta de validaciones y manejo de errores basados exactamente en los escenarios definidos por el cliente.
 
-- **Node.js 20** o superior
-- **npm 10** (viene con Node 20)
-- Git
+---
 
-## Cómo arrancar
+## Características Principales
 
+* **Reserva de Turnos Flexible:** Modalidad de **Turno Único** o **Reserva Fija Mensual** con generación automática de bloques horarios según la agenda del centro.
+* **Lista de Espera Inteligente:** Sistema algorítmico automatizado que gestiona colas de prioridad cuando los cupos se agotan, notificando en tiempo real a los pacientes para aceptar o rechazar vacantes liberadas en un margen de 12 horas.
+* **Integración de Pagos:** Conexión con **MercadoPago** para la confirmación de reservas (turnos individuales y paquetes mensuales fijos) mediante polling dinámico y webhooks.
+* **Panel de Administración (Presencial / Backoffice):** Módulo para kinesiólogos y recepcionistas que permite la carga manual de turnos, sobreescritura de cupos y seguimiento del estado de pacientes.
+* **Arquitectura Monorepo:** Separación limpia de capas conectadas bajo un mismo entorno con `npm workspaces`.
+
+---
+
+## Stack Tecnológico
+
+| Capa | Tecnología | Detalle |
+| :--- | :--- | :--- |
+| **Backend** | NestJS 10 | Framework modular con TypeScript, ValidationPipes y Guards de Auth. |
+| **Frontend** | Next.js 14 | App Router, Server/Client Components y diseño responsivo con TailwindCSS. |
+| **Base de Datos** | PostgreSQL | Motor relacional robusto. |
+| **ORM** | Prisma ORM | Modelado esquemático, tipado seguro y transacciones atómicas (`$transaction`). |
+| **Pagos** | MercadoPago SDK | Generación de preferencias de cobro y validación de estados de pago. |
+| **Testing** | Jest | Pruebas unitarias y de integración para reglas de negocio críticas. |
+
+---
+
+## Cómo levantar el proyecto en entorno local
+
+### Pre-requisitos
+* **Node.js** v20 o superior.
+* **npm** v10 o superior.
+* Instancia local o servicio en la nube de **PostgreSQL**.
+
+### 1. Clonar el repositorio
 ```bash
-# 1) Clonar
-git clone https://github.com/<organizacion>/MicroTech-KinePro.git
+git clone [https://github.com/](https://github.com/)<organizacion>/MicroTech-KinePro.git
 cd MicroTech-KinePro
 
 # 2) Instalar dependencias (las dos apps)
 npm install --workspaces
 
 # 3) Configurar variables de entorno
-#    Linux/Mac
+#   Linux/Mac
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.local.example apps/web/.env.local
-#    Windows (PowerShell o cmd)
+#   Windows (PowerShell o cmd)
 copy apps\api\.env.example apps\api\.env
 copy apps\web\.env.local.example apps\web\.env.local
 ```
-
-### Levantar los servidores
-
-En **dos terminales** distintas, ambas paradas en la raíz del repo:
-
-```bash
+Levantar los servidores
+En dos terminales distintas, ambas paradas en la raíz del repo:
+```Bash
 # Terminal 1 - Backend NestJS
 npm run dev:api      # http://localhost:4000/api
-
 # Terminal 2 - Frontend Next.js
-npm run dev:web      # http://localhost:3000
+npm run dev:web # http://localhost:3000
 ```
-
-Al abrir `http://localhost:3000`, la landing consulta el endpoint
-`GET /api/health` del backend y muestra **"OK ✅"** si todo levantó.
-
-## Estructura
-
-```
-MicroTech-KinePro/
+EstructuraMicroTech-KinePro/
+```Bash
 ├── apps/
-│   ├── api/                         # Backend NestJS
+│   ├── api/                     # Backend NestJS
+│   │   ├── prisma/              # Schema y migraciones de PostgreSQL
 │   │   └── src/
-│   │       ├── main.ts              # Bootstrap (CORS, ValidationPipe, prefix /api)
-│   │       ├── app.module.ts        # Módulo raíz
-│   │       └── health/              # GET /api/health (sanity check)
-│   └── web/                         # Frontend Next.js
-│       ├── tailwind.config.ts       # Paleta KinePro (azul/verde)
-│       └── src/app/
-│           ├── globals.css
-│           ├── layout.tsx
-│           └── page.tsx             # Landing con verificador de health
-├── docs/
-│   └── arquitectura.md
-├── package.json                     # Workspaces + scripts globales
+│   │       ├── auth/            # Autenticación y control de roles (ADMIN/USER)
+│   │       ├── turnos/          # Lógica de agenda y disponibilidad
+│   │       ├── reservas/        # Gestión de reservas simples y fijas
+│   │       ├── lista-espera/    # Algoritmo de colas y prioridades
+│   │       ├── pagos/           # Conector MercadoPago y verificación
+│   │       └── main.ts          # Bootstrap y validaciones globales
+│   └── web/                     # Frontend Next.js
+│       ├── src/
+│       │   ├── app/             # Rutas de interfaz (App Router)
+│       │   ├── components/      # Grillas de turnos, modales y banners
+│       │   └── services/        # Clientes HTTP hacia la API
+├── package.json                 # Workspaces + scripts globales
 └── README.md
 ```
-
-> Nota: la carpeta `apps/api/prisma/` y `apps/api/src/prisma/` quedan
-> como **placeholder** vacío del scaffolding inicial. Si el equipo
-> decide usar Prisma, ahí van los archivos. Si no, simplemente borren
-> esas carpetas.
-
-## Scripts (desde la raíz)
-
-| Comando | Qué hace |
-|---------|----------|
-| `npm run dev:api` | Levanta el backend con watch (`nest start --watch`) |
-| `npm run dev:web` | Levanta el frontend Next.js en modo dev |
-| `npm run build:api` | Compila el backend a `apps/api/dist` |
-| `npm run build:web` | Build de producción del frontend |
-
-## Convenciones sugeridas
-
-- **Branching**: `main` siempre verde. Feature branches con prefijo
-  `feature/<#hu>-<slug>`, bugfix con `fix/<slug>`.
-- **Commits**: usar prefijos tipo Conventional Commits
-  (`feat:`, `fix:`, `docs:`, `refactor:`, …).
-- **PR**: cada PR linkea la HU de Taiga y referencia el escenario que
-  cubre. Incluir capturas si toca UI.
-- **Tipado estricto**: `strict: true` en TS. No usar `any`.
-- **Validación de DTOs**: usar `class-validator` (los DTOs viven en
-  `<modulo>/<modulo>.dto.ts`).
-- **Mensajes de error**: el texto debe coincidir **exacto** con el
-  criterio de aceptación de la HU (incluyendo tildes).
-
-## Próximos pasos
-
-Cada miembro toma una épica en Taiga y arma el módulo correspondiente
-siguiendo la estructura típica de NestJS:
-
-```
-apps/api/src/<modulo>/
-├── <modulo>.module.ts
-├── <modulo>.controller.ts
-├── <modulo>.service.ts
-└── <modulo>.dto.ts
-```
-
-Y cada pantalla en `apps/web/src/app/<ruta>/page.tsx`.
-
-## Equipo
-
-MicroTech · Cátedra Ingeniería de Software II · Facultad de Informática
-· Universidad Nacional de La Plata.
