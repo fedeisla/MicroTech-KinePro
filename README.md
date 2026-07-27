@@ -98,8 +98,6 @@ EstructuraMicroTech-KinePro/
 ---
 
 
----
-
 ## Equipo de Trabajo
 
 
